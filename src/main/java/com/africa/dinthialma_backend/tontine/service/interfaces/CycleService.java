@@ -7,6 +7,7 @@ import com.africa.dinthialma_backend.tontine.dto.OpenCycleRequest;
 import com.africa.dinthialma_backend.tontine.dto.PropositionTourResponse;
 import com.africa.dinthialma_backend.tontine.dto.SelectionnerBeneficiaireRequest;
 import java.time.LocalDate;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -54,6 +55,17 @@ public interface CycleService {
    * EN_COURS} si applicable. Réservé au créateur et au SUPER_ADMIN.
    */
   CycleResponse closeCycle(String keycloakId, UUID tontineId, UUID cycleId) throws CustomException;
+
+  /**
+   * Remise du jackpot dès que tous ont payé (B32, {@code declenchementJackpot = TOUS_PAYES}),
+   * appelée après chaque validation de cotisation. Rotative ACTIVE, tour EN_COURS et chaque membre
+   * actif payé sur chaque échéance : en mode AUTOMATIQUE le tour est clôturé (comme {@link
+   * #closeCycle}) ; en mode MANUEL le gestionnaire est notifié ({@code JACKPOT_PRET}).
+   *
+   * @return le tour clôturé, vide si aucune clôture n'a eu lieu
+   */
+  Optional<CycleResponse> remettreSiTousPayes(String keycloakId, UUID tontineId, UUID cycleId)
+      throws CustomException;
 
   /**
    * Liste l'historique des bénéficiaires de jackpot d'une tontine (cycles TERMINÉ avec bénéficiaire

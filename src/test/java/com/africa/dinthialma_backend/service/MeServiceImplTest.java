@@ -21,10 +21,12 @@ import com.africa.dinthialma_backend.common.exception.NotFoundException;
 import com.africa.dinthialma_backend.common.util.FichierExport;
 import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
 import com.africa.dinthialma_backend.contribution.dto.CotisationResponse;
+import com.africa.dinthialma_backend.contribution.dto.EtatTour;
 import com.africa.dinthialma_backend.contribution.entity.Cotisation;
 import com.africa.dinthialma_backend.contribution.mapper.CotisationMapper;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
 import com.africa.dinthialma_backend.contribution.service.interfaces.CotisationService;
+import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
 import com.africa.dinthialma_backend.jackpot.service.interfaces.PrioriteJackpotService;
 import com.africa.dinthialma_backend.me.codeList.ModeActivite;
 import com.africa.dinthialma_backend.me.codeList.StatutCotisationDue;
@@ -58,6 +60,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -93,6 +96,7 @@ class MeServiceImplTest {
   @Mock private ActiviteRepository activiteRepository;
   @Mock private DistributionEvenementielleRepository distributionRepository;
   @Mock private PrioriteJackpotService prioriteService;
+  @Mock private SuiviTourService suiviTour;
   @InjectMocks private MeServiceImpl service;
 
   private User moi;
@@ -104,6 +108,9 @@ class MeServiceImplTest {
     moi = Fixtures.user("Awa");
     gestionnaire = Fixtures.user("Gestionnaire");
     kc = moi.getKeycloakId();
+    lenient()
+        .when(suiviTour.etat(any()))
+        .thenReturn(new EtatTour(0, 1, null, false, null, null, 0, 0));
     lenient().when(userRepository.findByKeycloakId(kc)).thenReturn(Optional.of(moi));
   }
 
@@ -165,6 +172,9 @@ class MeServiceImplTest {
       when(cycleRepository.findByTontine_IdInAndStatutAndDeletedAtIsNull(
               anyList(), eq(CycleStatut.EN_COURS)))
           .thenReturn(List.of(c1, c2, c3));
+      when(suiviTour.toursPayes(anyList(), anyList())).thenReturn(Map.of(m1.getId(), 1L));
+      when(suiviTour.etat(c1))
+          .thenReturn(new EtatTour(10, 4, new BigDecimal("40000"), true, null, 2, 0, 0));
       Cotisation valide = Fixtures.cotisation(m2, c2, CotisationStatut.VALIDE);
       Cotisation refus = Fixtures.cotisation(m3, c3, CotisationStatut.REFUSE);
       refus.setMotifRefus("Montant erroné");
@@ -187,6 +197,10 @@ class MeServiceImplTest {
       assertThat(l1.getToursPayes()).isEqualTo(1);
       assertThat(l1.getToursTotal()).isEqualTo(5);
       assertThat(l1.getCycleEnCours().getNumeroCycle()).isEqualTo(2);
+      assertThat(l1.getCycleEnCours().getNombreEcheances()).isEqualTo(4);
+      assertThat(l1.getCycleEnCours().getMontantJackpotPrevu()).isEqualByComparingTo("40000");
+      assertThat(l1.getCycleEnCours().isTousPayes()).isTrue();
+      assertThat(r.getTontines().get(1).getToursPayes()).isZero();
       assertThat(l1.getCotisationDue().getStatut()).isEqualTo(StatutCotisationDue.A_PAYER);
       assertThat(l1.getCotisationDue().getMontant()).isEqualByComparingTo("1000");
       assertThat(l1.getGestionnaire().getId()).isEqualTo(gestionnaire.getId());
@@ -449,6 +463,7 @@ class MeServiceImplTest {
     void rotation() throws Exception {
       Tontine t = Fixtures.tontine(gestionnaire);
       t.setNombreGagnants(1);
+      t.setCotisationsParTour(3);
       List<TontineMembre> actifs = new ArrayList<>();
       TontineMembre servi = Fixtures.membre(t, Fixtures.user("Servi"), 1);
       servi.setARecuJackpot(true);
@@ -477,7 +492,8 @@ class MeServiceImplTest {
       assertThat(a.getPosition()).isEqualTo(3);
       assertThat(a.getNumeroCycleEstime()).isEqualTo(4);
       assertThat(a.getDateEstimee()).isEqualTo(cycles.get(3).getDateFin());
-      assertThat(a.getMontantEstime()).isEqualByComparingTo("4000");
+      // Tour complet (B32) : 1 000 F × 4 membres actifs × 3 cotisations par tour
+      assertThat(a.getMontantEstime()).isEqualByComparingTo("12000");
     }
 
     @Test

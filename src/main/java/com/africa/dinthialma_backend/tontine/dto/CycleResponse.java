@@ -47,6 +47,22 @@ public class CycleResponse {
   private EcheanceResponse echeanceEnCours;
 
   @Schema(
+      description =
+          "Jackpot brut prévu du tour (B32) = montant par membre × membres ACTIFS × échéances du"
+              + " tour, tous gagnants confondus (comparable à montantJackpot) ; null si montant"
+              + " libre sans plancher",
+      example = "200000",
+      nullable = true)
+  private BigDecimal montantJackpotPrevu;
+
+  @Schema(
+      description =
+          "Tour EN_COURS dont chaque membre ACTIF a une cotisation VALIDÉE sur chaque échéance"
+              + " (B32) : le jackpot peut être remis. Toujours false hors tour EN_COURS",
+      example = "false")
+  private boolean tousPayes;
+
+  @Schema(
       description = "Jackpot brut = somme des cotisations VALIDÉES (calculé à la clôture)",
       example = "500000")
   private BigDecimal montantJackpot;

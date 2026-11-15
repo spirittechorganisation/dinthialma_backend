@@ -80,5 +80,11 @@ public enum NotificationType {
    * Échéance passée avec des membres actifs qui n'ont pas déclaré leur cotisation (B26) ; le statut
    * des cotisations ne change pas (destinataire : gestionnaire).
    */
-  COTISATIONS_MANQUANTES
+  COTISATIONS_MANQUANTES,
+
+  /**
+   * Tous les membres actifs ont payé toutes les échéances du tour (B32, remise {@code TOUS_PAYES}
+   * en mode MANUEL) : le jackpot peut être remis (destinataire : gestionnaire).
+   */
+  JACKPOT_PRET
 }

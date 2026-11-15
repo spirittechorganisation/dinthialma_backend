@@ -732,6 +732,8 @@ Points d'attention :
   - mode manuel : ouverture sans `dateFin` → date proposée ; avec une `dateFin` plus courte → moins d'échéances, jackpot prévu ajusté ;
   - commission fixe 2 000 F → prélevée une seule fois à la clôture du tour ;
   - tontine existante → fonctionne exactement comme avant.
+- **✅ Livré (2026-11-15)**, en 3 lots : N cotisations par tour, jackpot visé, proposition et simulation (V041) ; cotisations par échéance (V042) ; jackpot prévu, `tousPayes`, remise `TOUS_PAYES` et tableaux de bord sur le tour complet.
+  - **Écarts assumés** : `montantJackpotPrevu` est le brut du tour **tous gagnants confondus** (comparable à `montantJackpot`) ; `/me/jackpots.montantEstime` reste par gagnant ; `FIN_DU_TOUR` ne clôture pas tout seul à l'échéance (le gestionnaire remet, comme avant ; **décision 2026-11-15** : la remise automatique à l'échéance est reportée à B33, en réglage choisi par le gestionnaire, désactivé par défaut, sans effet sur les tontines existantes) ; `TOUS_PAYES` clôture automatiquement en mode AUTOMATIQUE, et notifie `JACKPOT_PRET` au gestionnaire en mode MANUEL ; dans `my-dashboard`, `membresAyantPaye` / `membresEnAttente` portent sur l'échéance courante ; `CycleEnCours` (`/me/summary`) reçoit `nombreEcheances`, `montantJackpotPrevu`, `tousPayes` (le détail des échéances reste dans `cotisationDue` et `CycleResponse`).
 
 ### B33 — Cotisation séparée de la remise : retards régularisables, options de remise, clôture de la tontine
 - **Écrans** : Tours, Remise du jackpot (nouvel aperçu), Payer, Encaisser, À valider, Réglages, Fiche Tontine.
@@ -741,6 +743,8 @@ Points d'attention :
   2. un seul tour `EN_COURS` à la fois : tant que le gestionnaire attend un retardataire, **personne ne peut payer l'échéance suivante** ;
   3. aucune clôture de tontine : rien ne la fait passer `TERMINEE`.
 - **Hors plateforme** : les litiges entre gestionnaire et membres (retards, refus de continuer après avoir reçu le jackpot, tontines événementielles ou rotatives) se règlent **en dehors de Dinthialma** et n'engagent en aucun cas la plateforme. Les montants « reste à recevoir » et « avance à rembourser » sont des **informations de suivi**, pas des obligations de Dinthialma ; l'app ne détient aucun fonds. Clause à prévoir dans les CGU (affichée côté front).
+
+- **Décision (2026-11-15)** : remettre le jackpot automatiquement à l'échéance ou attendre que le gestionnaire appuie sur « Remettre » sont **deux options soumises à la décision du gestionnaire** (réglage de la tontine, désactivé par défaut = remise par le gestionnaire). Les tontines existantes gardent leur fonctionnement actuel : aucune clôture automatique n'apparaît sans choix explicite.
 
 #### 1. La cotisation ne dépend plus de la remise
 - La période de cotisation d'un tour (ses échéances, B32) **s'ouvre à sa date**, que le tour précédent soit remis ou non : plusieurs tours peuvent être ouverts en même temps.

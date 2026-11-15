@@ -104,7 +104,7 @@
 | `/` | POST | ❌ | ✅¹ | ❌ | ✅ | 🔒 le cotisant enregistre son paiement ; B32 : `echeanceId` facultatif (défaut = échéance courante), une cotisation active par membre **et par échéance** (409), échéance future → `ECHEANCE_NON_OUVERTE`, inconnue → 404 `ECHEANCE_INTROUVABLE`, échéance passée = régularisation |
 | `/admin` | POST | ❌ | ❌ | ✅² | ✅ | 🔒 saisie admin pour n'importe quel membre (y compris PRE_ENROLLED), créée directement VALIDE ; `datePaiement` optionnelle (≤ maintenant, ≥ début du tour) pour la ponctualité ; `echeanceId` comme la déclaration (B32) |
 | `/{id}` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 correction (champs non-null) : EN_ATTENTE ou VALIDE + cycle EN_COURS ; refusé si cycle TERMINE ou EN_RETARD |
-| `/{id}/valider` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 EN_ATTENTE → VALIDE |
+| `/{id}/valider` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 EN_ATTENTE → VALIDE ; B32 : en `TOUS_PAYES`, la validation qui complète le tour le clôture (AUTOMATIQUE) ou notifie `JACKPOT_PRET` (MANUEL) — idem `/admin` |
 | `/{id}/refuser` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 EN_ATTENTE → REFUSE, `motif` obligatoire ; notifie le membre (`COTISATION_REFUSEE`) ; le membre peut redéclarer sur le même cycle |
 | `/recap/{cycleId}` | GET | ❌ | ❌ | ✅² | ✅ | 🔒 statut de cotisation par membre pour un cycle (pageable, SORTI exclus) ; B32 : champs sur l'échéance de référence (`?echeanceId=`, défaut courante) + `nombreEcheances`, `echeancesDues`, `echeancesPayees`, `echeances[]` |
 | `/recap-total` | GET | ❌ | ❌ | ✅² | ✅ | 🔒 total VALIDÉ cumulé par membre, tous cycles (pageable, SORTI exclus) |
@@ -114,7 +114,7 @@
 | Endpoint | Méthode | USER | MEMBER | ADMIN | SUPER_ADMIN | Notes |
 |----------|---------|------|--------|-------|-------------|-------|
 | `/` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 |
-| `/{cycleId}` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 |
+| `/{cycleId}` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 B32 : `montantJackpotPrevu` (brut du tour complet), `tousPayes` (tour EN_COURS) |
 | `/beneficiaires` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 historique des cycles TERMINE avec gagnants (pageable, tri numeroCycle ASC) |
 | `/proposition` | GET | ❌ | ❌ | ✅² | ✅ | 🔒 ROTATIVE MANUEL : tour proposé selon le rythme et `cotisationsParTour` (`?dateDebut=`, défaut aujourd'hui) : `dateFin`, `nombreEcheances`, `echeances` ; sans effet en base (B32) |
 | `/` | POST | ❌ | ❌ | ✅² | ✅ | 🔒 mode MANUEL uniquement ; `dateFin` facultative (absente = les N échéances du rythme ; choisie = échéances jusqu'à cette date, la dernière ramenée dessus ; reliquat de moins d'une demi-période fusionné dans l'échéance précédente, B26/B32) |
@@ -155,7 +155,7 @@
 | `/dashboard/users/{id}/enable` | POST | ❌ | ✅ | Réactiver un compte |
 | `/dashboard/users/{id}/roles` | PUT | ❌ | ✅ | Modifier les rôles |
 | `/dashboard/contributions` | GET | ❌ | ✅ | Toutes cotisations (pageable, filtres cumulables `?statut=` `?tontineId=`) |
-| `/my-dashboard` | GET | ✅ | ✅ | Métriques de l'admin pour ses tontines (`tontines` = `PagedModel`) + agrégats globaux : `nombreTontinesGerees`, `montantTotalValide`, `totalMembres`, `totalCotisationsEnAttente/EnRetard`, `totalDemandesEnAttente`, `totalCollecteToursEnCours`, `totalAttenduToursEnCours` ; par tontine : `gagnantsADesigner`, `demandesEnAttente`, `prioritesEnAttente` + `cycleEnCours` (`montantCollecte`, `montantEnAttente`, `montantAttendu`, `membresAyantPaye`, `membresEnAttente`, `membresActifs`) |
+| `/my-dashboard` | GET | ✅ | ✅ | Métriques de l'admin pour ses tontines (`tontines` = `PagedModel`) + agrégats globaux : `nombreTontinesGerees`, `montantTotalValide`, `totalMembres`, `totalCotisationsEnAttente/EnRetard`, `totalDemandesEnAttente`, `totalCollecteToursEnCours`, `totalAttenduToursEnCours` ; par tontine : `gagnantsADesigner`, `demandesEnAttente`, `prioritesEnAttente` + `cycleEnCours` (`montantCollecte`, `montantEnAttente`, `montantAttendu` = `montantJackpotPrevu` sur le tour complet, `tousPayes`, `nombreEcheances`, `numeroEcheanceCourante`, `membresAyantPaye` / `membresEnAttente` sur l'échéance courante, `membresActifs`) (B32) |
 
 ### 🙋 Mon espace (`/v1/me`)
 
@@ -274,10 +274,10 @@ src/main/java/com/africa/dinthialma_backend/
 │   ├── entity/         Cotisation
 │   ├── repository/     CotisationRepository
 │   └── service/
-│       ├── interfaces/ CotisationService
-│       └── impl/       CotisationServiceImpl
+│       ├── interfaces/ CotisationService, SuiviTourService
+│       └── impl/       CotisationServiceImpl, SuiviTourServiceImpl
 ├── notification/   ✅ SMS (LAfricaMobile) + notifications in-app
-│   ├── codeList/       NotificationType (22 valeurs)
+│   ├── codeList/       NotificationType (23 valeurs)
 │   ├── controller/     NotificationController
 │   ├── dto/            NotificationResponse
 │   ├── entity/         UserNotification
@@ -724,7 +724,7 @@ Prochaine version disponible : **V043**
 | Marquer tout lu (bulk `@Modifying`) | ✅ | 🔒 tout auth |
 | `notify()` non-bloquant (try/catch interne, jamais de rollback) | ✅ | INFRA |
 
-#### Mapping événements → `NotificationType` (22 valeurs)
+#### Mapping événements → `NotificationType` (23 valeurs)
 
 | Événement | Type | Destinataire |
 |-----------|------|--------------|
@@ -751,6 +751,7 @@ Prochaine version disponible : **V043**
 | Ordre des bénéficiaires modifié | `ORDRE_BENEFICIAIRE_MODIFIE` | Membres actifs |
 | Jour / heure d'échéance modifiés en cours (B26) | `REGLES_MODIFIEES` | Membres actifs |
 | Tour clôturé en MANUEL / HYBRIDE avec des éligibles | `GAGNANTS_A_DESIGNER` | Gestionnaire |
+| Tous les membres ont payé le tour (`TOUS_PAYES`, mode MANUEL, B32) | `JACKPOT_PRET` | Gestionnaire |
 
 ---
 
@@ -936,7 +937,8 @@ cd docker && docker compose up -d
       lot 1 : cotisationsParTour / jackpotVise / declenchementJackpot (V041), tours de N échéances,
               proposition MANUEL, simulation par tour, échéances dans CycleResponse            ✅
       lot 2 : cotisations par échéance (déclaration, ponctualité, récap, rappels, V042)    ✅
-      lot 3 : jackpot prévu × N, remise TOUS_PAYES, tableaux de bord                       🔲
+      lot 3 : jackpot prévu × N, remise TOUS_PAYES (clôture auto / JACKPOT_PRET), tableaux de bord,
+              toursPayes et QR par échéance (SuiviTourService)                             ✅
 ```
 
 ---
@@ -1011,15 +1013,27 @@ l'ouverture manuelle et la simulation (`GET /v1/tontines/simulation`).
   (`COTISATIONS_PAR_TOUR_NON_MODIFIABLE`). Un tour regroupe N échéances consécutives du rythme
   (`CalendrierTours.grouper`) ; sa `dateFin` / `echeanceAt` sont celles de sa dernière échéance ; le nombre
   de tours ne change pas. `CycleResponse` : `nombreEcheances`, `echeances[]` (statut calculé A_VENIR /
-  EN_COURS / ECHUE, `StatutEcheance`), `echeanceEnCours`. `declenchementJackpot` (FIN_DU_TOUR | TOUS_PAYES)
-  est enregistré ; son effet arrive au lot 3.
+  EN_COURS / ECHUE, `StatutEcheance`), `echeanceEnCours`. `declenchementJackpot` : FIN_DU_TOUR | TOUS_PAYES
+  (effet : lot 3 ci-dessous).
 - **B32 lot 2 — paiement par échéance** (`EcheancesTour`) : la 1ʳᵉ échéance d'un tour est ouverte dès
   l'ouverture du tour (comportement d'avant B32), les suivantes à leur `dateDebut` ; l'échéance **courante**
   (payée par défaut) est la dernière ouverte. Cotisation rattachée à son échéance (`Cotisation.echeance`,
   V042) : unicité, ponctualité (`Ponctualite.de` sur l'échéance), récap, rappels / `COTISATIONS_MANQUANTES`
   et `cotisationDue` (`/me/summary` : `echeanceId`, `numeroEcheance`, `nombreEcheances`, `echeanceAt`,
-  `echeancesEnRetard`) se calculent par échéance. Restent au niveau du tour jusqu'au lot 3 : tableaux de
-  bord, `aPayeCycleEnCours` (QR), rappel quotidien de 8h, `toursPayes`.
+  `echeancesEnRetard`) se calculent par échéance.
+- **B32 lot 3 — suivi du tour** (`SuiviTourService`, `EtatTour`) : **jackpot prévu** = montant par membre ×
+  membres ACTIFS × échéances du tour, brut et tous gagnants confondus (`montantJackpotPrevu` dans
+  `CycleResponse`, `my-dashboard`, `/me/summary`) ; **`tousPayes`** = tour EN_COURS dont chaque membre ACTIF a
+  une cotisation VALIDÉE sur chaque échéance. `my-dashboard` : `montantAttendu` et `totalAttenduToursEnCours`
+  sur le tour complet, `membresAyantPaye` / `membresEnAttente` sur l'échéance courante. `/me/jackpots` :
+  `montantEstime` × `cotisationsParTour`. `toursPayes` = tours dont toutes les échéances sont validées ;
+  `aPayeCycleEnCours` (QR) = cotisation active sur l'échéance courante.
+- **Remise `TOUS_PAYES`** (`CycleService.remettreSiTousPayes`, appelée après chaque validation et chaque saisie
+  admin, dans la même transaction) : rotative ACTIVE dont le tour est complet → mode AUTOMATIQUE : clôture
+  immédiate (gagnants, tour suivant) ; mode MANUEL : notification `JACKPOT_PRET`, le gestionnaire remet
+  lui-même. Sans paiement complet, rien ne se clôture à l'échéance (`COTISATIONS_MANQUANTES` part, B26) ; le
+  gestionnaire peut toujours clôturer. `FIN_DU_TOUR` : clôture par le gestionnaire, comme avant B32. Le rappel
+  quotidien de 8h porte sur chaque cotisation EN_ATTENTE (donc déjà par échéance).
 
 ---
 

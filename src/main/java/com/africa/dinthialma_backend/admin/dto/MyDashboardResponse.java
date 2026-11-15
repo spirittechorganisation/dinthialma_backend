@@ -229,17 +229,41 @@ public class MyDashboardResponse {
 
     @Schema(
         description =
-            "Montant attendu sur ce tour (montant par membre × membres ACTIFS), en FCFA – null si"
-                + " montant libre sans plancher",
+            "Montant attendu sur le tour complet (montant par membre × membres ACTIFS × échéances"
+                + " du tour, B32), en FCFA – null si montant libre sans plancher",
         example = "60000",
         nullable = true)
     private BigDecimal montantAttendu;
 
-    @Schema(description = "Membres dont la cotisation du tour est VALIDÉE", example = "8")
+    @Schema(
+        description = "Jackpot brut prévu du tour (= montantAttendu, B32)",
+        example = "60000",
+        nullable = true)
+    private BigDecimal montantJackpotPrevu;
+
+    @Schema(
+        description =
+            "Chaque membre ACTIF a une cotisation VALIDÉE sur chaque échéance du tour (B32)",
+        example = "false")
+    private boolean tousPayes;
+
+    @Schema(description = "Nombre d'échéances de cotisation du tour (B32)", example = "4")
+    private int nombreEcheances;
+
+    @Schema(
+        description = "Numéro de l'échéance courante (payée par défaut) – null si aucune",
+        example = "2",
+        nullable = true)
+    private Integer numeroEcheanceCourante;
+
+    @Schema(
+        description = "Membres dont la cotisation de l'échéance courante est VALIDÉE (B32)",
+        example = "8")
     private long membresAyantPaye;
 
     @Schema(
-        description = "Membres ayant déclaré un paiement EN_ATTENTE de validation",
+        description =
+            "Membres dont la cotisation de l'échéance courante est EN_ATTENTE de validation (B32)",
         example = "1")
     private long membresEnAttente;
 

@@ -35,4 +35,15 @@ public interface EcheanceCycleRepository extends JpaRepository<EcheanceCycle, UU
 
   /** Échéance active d'une tontine donnée (filtres par échéance, B32). */
   Optional<EcheanceCycle> findByIdAndCycle_Tontine_IdAndDeletedAtIsNull(UUID id, UUID tontineId);
+
+  /**
+   * Nombre d'échéances actives par tour, pour les tours actifs d'un ensemble de tontines. Chaque
+   * ligne : {@code [cycleId (UUID), nombre (Long)]}.
+   */
+  @Query(
+      "SELECT e.cycle.id, COUNT(e) FROM EcheanceCycle e"
+          + " WHERE e.cycle.tontine.id IN :tontineIds"
+          + "   AND e.deletedAt IS NULL AND e.cycle.deletedAt IS NULL"
+          + " GROUP BY e.cycle.id")
+  List<Object[]> countByCycleForTontines(@Param("tontineIds") List<UUID> tontineIds);
 }

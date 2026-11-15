@@ -139,7 +139,11 @@ public class MeSummaryResponse {
         example = "1")
     private long nombreJackpotsRecus;
 
-    @Schema(description = "Nombre de tours où ma cotisation est VALIDÉE", example = "4")
+    @Schema(
+        description =
+            "Nombre de tours entièrement payés : ma cotisation VALIDÉE sur chaque échéance du"
+                + " tour (B32)",
+        example = "4")
     private long toursPayes;
 
     @Schema(
@@ -182,6 +186,22 @@ public class MeSummaryResponse {
         description = "Limite de paiement du tour (B26), avec fuseau",
         example = "2026-11-30T23:59:00Z")
     private OffsetDateTime echeanceAt;
+
+    @Schema(description = "Nombre d'échéances de cotisation du tour (B32)", example = "4")
+    private int nombreEcheances;
+
+    @Schema(
+        description =
+            "Jackpot brut prévu du tour (montant × membres ACTIFS × échéances, tous gagnants"
+                + " confondus, B32) – null si montant libre sans plancher",
+        example = "200000",
+        nullable = true)
+    private BigDecimal montantJackpotPrevu;
+
+    @Schema(
+        description = "Chaque membre ACTIF a payé (VALIDÉ) chaque échéance du tour (B32)",
+        example = "false")
+    private boolean tousPayes;
   }
 
   @Schema(

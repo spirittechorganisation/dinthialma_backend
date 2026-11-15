@@ -80,8 +80,9 @@ public class QrResolutionResponse {
 
     @Schema(
         description =
-            "true si une cotisation active (EN_ATTENTE ou VALIDE) existe sur le tour en cours ;"
-                + " null s'il n'y a pas de tour en cours",
+            "true si une cotisation active (EN_ATTENTE ou VALIDE) existe sur l'échéance courante"
+                + " du tour en cours (B32 ; = le tour s'il n'a qu'une échéance) ; null s'il n'y a"
+                + " pas de tour en cours",
         nullable = true)
     private Boolean aPayeCycleEnCours;
 

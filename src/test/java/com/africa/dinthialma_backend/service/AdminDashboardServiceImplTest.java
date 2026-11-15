@@ -31,10 +31,11 @@ import com.africa.dinthialma_backend.common.exception.CustomException;
 import com.africa.dinthialma_backend.common.exception.ForbiddenException;
 import com.africa.dinthialma_backend.common.exception.NotFoundException;
 import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
+import com.africa.dinthialma_backend.contribution.dto.EtatTour;
 import com.africa.dinthialma_backend.contribution.mapper.CotisationMapper;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
+import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
 import com.africa.dinthialma_backend.jackpot.repository.PrioriteJackpotRepository;
-import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import com.africa.dinthialma_backend.member.repository.TontineMembreRepository;
 import com.africa.dinthialma_backend.support.Fixtures;
 import com.africa.dinthialma_backend.tontine.codeList.CycleStatut;
@@ -87,6 +88,7 @@ class AdminDashboardServiceImplTest {
   @Mock private KeycloakAuthService keycloakAuthService;
   @Mock private DemandeAdhesionRepository demandeRepository;
   @Mock private PrioriteJackpotRepository prioriteRepository;
+  @Mock private SuiviTourService suiviTour;
   @InjectMocks private AdminDashboardServiceImpl service;
 
   private User superAdmin;
@@ -101,6 +103,9 @@ class AdminDashboardServiceImplTest {
     simple = Fixtures.user("Simple");
     cible = Fixtures.user("Cible");
     kc = superAdmin.getKeycloakId();
+    lenient()
+        .when(suiviTour.etat(any()))
+        .thenReturn(new EtatTour(0, 1, null, false, null, null, 0, 0));
     for (User u : List.of(superAdmin, simple, cible)) {
       lenient().when(userRepository.findByKeycloakId(u.getKeycloakId())).thenReturn(Optional.of(u));
       lenient()
@@ -363,9 +368,9 @@ class AdminDashboardServiceImplTest {
       when(membreRepository.findParametresToursEnCoursByCreateur(uid))
           .thenReturn(
               List.of(
-                  new Object[] {false, new BigDecimal("1000"), null, 4L},
-                  new Object[] {true, null, new BigDecimal("500"), 2L},
-                  new Object[] {true, null, null, 3L}));
+                  new Object[] {false, new BigDecimal("1000"), null, 4L, 2L},
+                  new Object[] {true, null, new BigDecimal("500"), 2L, 1L},
+                  new Object[] {true, null, null, 3L, 1L}));
 
       CycleTontine tour = Fixtures.cycle(rotative, 3, CycleStatut.EN_COURS);
       User benef = Fixtures.user("Bénéficiaire");
@@ -395,9 +400,9 @@ class AdminDashboardServiceImplTest {
                   new Object[] {CotisationStatut.VALIDE, 2L, new BigDecimal("2000")},
                   new Object[] {CotisationStatut.EN_ATTENTE, 1L, new BigDecimal("1000")},
                   new Object[] {CotisationStatut.REFUSE, 1L, new BigDecimal("1000")}));
-      when(membreRepository.countByTontine_IdAndStatutAndDeletedAtIsNull(
-              rotative.getId(), MembreStatut.ACTIF))
-          .thenReturn(5L);
+      UUID echeanceCourante = UUID.randomUUID();
+      when(suiviTour.etat(tour))
+          .thenReturn(new EtatTour(5, 4, new BigDecimal("20000"), true, echeanceCourante, 2, 2, 1));
       when(cycleRepository.existsTermineSansGagnant(rotative.getId())).thenReturn(true);
       when(cotisationRepository.countMembresAyantCotiseValide(evt.getId())).thenReturn(3L);
 
@@ -421,8 +426,9 @@ class AdminDashboardServiceImplTest {
       assertThat(r.getTotalCotisationsEnAttente()).isEqualTo(2);
       assertThat(r.getTotalCotisationsEnRetard()).isEqualTo(1);
       assertThat(r.getTotalCollecteToursEnCours()).isEqualByComparingTo("2000");
-      // 1000 × 4 + 500 × 2 (montant libre au minimum) ; montant libre sans minimum ignoré
-      assertThat(r.getTotalAttenduToursEnCours()).isEqualByComparingTo("5000");
+      // 1000 × 4 membres × 2 échéances (B32) + 500 × 2 (montant libre au minimum) ; montant
+      // libre sans minimum ignoré
+      assertThat(r.getTotalAttenduToursEnCours()).isEqualByComparingTo("9000");
 
       MyDashboardResponse.TontineStats s1 = r.getTontines().getContent().getFirst();
       assertThat(s1.isGagnantsADesigner()).isTrue();
@@ -437,7 +443,12 @@ class AdminDashboardServiceImplTest {
       assertThat(info.getMembresEnAttente()).isEqualTo(1);
       assertThat(info.getMontantCollecte()).isEqualByComparingTo("2000");
       assertThat(info.getMontantEnAttente()).isEqualByComparingTo("1000");
-      assertThat(info.getMontantAttendu()).isEqualByComparingTo("5000");
+      // Tour complet (B32) : attendu = jackpot prévu sur les 4 échéances
+      assertThat(info.getMontantAttendu()).isEqualByComparingTo("20000");
+      assertThat(info.getMontantJackpotPrevu()).isEqualByComparingTo("20000");
+      assertThat(info.isTousPayes()).isTrue();
+      assertThat(info.getNombreEcheances()).isEqualTo(4);
+      assertThat(info.getNumeroEcheanceCourante()).isEqualTo(2);
       assertThat(info.getMembresActifs()).isEqualTo(5);
 
       MyDashboardResponse.TontineStats s2 = r.getTontines().getContent().get(1);

@@ -54,6 +54,7 @@ import com.africa.dinthialma_backend.tontine.entity.Tontine;
 import com.africa.dinthialma_backend.tontine.repository.CycleTontineRepository;
 import com.africa.dinthialma_backend.tontine.repository.EcheanceCycleRepository;
 import com.africa.dinthialma_backend.tontine.repository.TontineRepository;
+import com.africa.dinthialma_backend.tontine.service.interfaces.CycleService;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -93,6 +94,7 @@ class CotisationServiceImplTest {
   @Mock private AuditService auditService;
   @Mock private WhatsappService whatsappService;
   @Mock private NotificationService notificationService;
+  @Mock private CycleService cycleService;
   @InjectMocks private CotisationServiceImpl service;
 
   private User gestionnaire;
@@ -315,6 +317,9 @@ class CotisationServiceImplTest {
               any());
       verify(whatsappService).send(eq(awa.getPhone()), contains("Référence : OM-42"));
       verify(whatsappService).send(eq(gestionnaire.getPhone()), anyString());
+      // B32 : la saisie directement VALIDE peut compléter le tour (TOUS_PAYES)
+      verify(cycleService)
+          .remettreSiTousPayes(eq(gestionnaire.getKeycloakId()), eq(tontine.getId()), any());
     }
 
     @Test
@@ -441,6 +446,9 @@ class CotisationServiceImplTest {
               eq(tontine.getId()),
               any());
       verify(whatsappService).send(eq(awa.getPhone()), contains("Référence : REF-9"));
+      // B32 : chaque validation vérifie si le jackpot peut être remis (TOUS_PAYES)
+      verify(cycleService)
+          .remettreSiTousPayes(gestionnaire.getKeycloakId(), tontine.getId(), c.getCycle().getId());
     }
 
     @Test

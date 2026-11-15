@@ -5,7 +5,7 @@ import com.africa.dinthialma_backend.auth.repository.UserRepository;
 import com.africa.dinthialma_backend.common.constants.ResponseMessageConstants;
 import com.africa.dinthialma_backend.common.exception.CustomException;
 import com.africa.dinthialma_backend.common.exception.NotFoundException;
-import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
+import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
 import com.africa.dinthialma_backend.me.dto.MonQrResponse;
 import com.africa.dinthialma_backend.me.dto.QrResolutionResponse;
 import com.africa.dinthialma_backend.me.service.interfaces.QrService;
@@ -42,7 +42,7 @@ public class QrServiceImpl implements QrService {
   private final UserRepository userRepository;
   private final TontineMembreRepository membreRepository;
   private final CycleTontineRepository cycleRepository;
-  private final CotisationRepository cotisationRepository;
+  private final SuiviTourService suiviTour;
   private final TontineRepository tontineRepository;
 
   @Value("${dinthialma.app.url:https://www.dinthialma.com}")
@@ -126,9 +126,7 @@ public class QrServiceImpl implements QrService {
         .statutMembre(m.getStatut())
         .cycleEnCoursId(enCours != null ? enCours.getId() : null)
         .aPayeCycleEnCours(
-            enCours != null
-                ? cotisationRepository.existsActiveByCycleAndMembre(enCours.getId(), m.getId())
-                : null)
+            enCours != null ? suiviTour.aPayeEcheanceCourante(enCours, m.getId()) : null)
         .build();
   }
 

@@ -47,6 +47,7 @@ import com.africa.dinthialma_backend.tontine.entity.Tontine;
 import com.africa.dinthialma_backend.tontine.repository.CycleTontineRepository;
 import com.africa.dinthialma_backend.tontine.repository.EcheanceCycleRepository;
 import com.africa.dinthialma_backend.tontine.repository.TontineRepository;
+import com.africa.dinthialma_backend.tontine.service.interfaces.CycleService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -81,6 +82,7 @@ public class CotisationServiceImpl implements CotisationService {
   private final AuditService auditService;
   private final WhatsappService whatsappService;
   private final NotificationService notificationService;
+  private final CycleService cycleService;
 
   // ─── Enregistrement ──────────────────────────────────────────────────────
 
@@ -333,6 +335,9 @@ public class CotisationServiceImpl implements CotisationService {
       log.warn("Notif WA admin (admin-record) non envoyée : {}", e.getMessage());
     }
 
+    // Remise du jackpot si tous ont payé (B32, TOUS_PAYES), après les notifications
+    cycleService.remettreSiTousPayes(keycloakId, tontineId, cycle.getId());
+
     return cotisationMapper.toResponse(saved);
   }
 
@@ -442,6 +447,9 @@ public class CotisationServiceImpl implements CotisationService {
     } catch (Exception e) {
       log.warn("Notif WA admin (validation) non envoyée : {}", e.getMessage());
     }
+
+    // Remise du jackpot si tous ont payé (B32, TOUS_PAYES), après les notifications
+    cycleService.remettreSiTousPayes(keycloakId, tontineId, saved.getCycle().getId());
 
     return cotisationMapper.toResponse(saved);
   }
