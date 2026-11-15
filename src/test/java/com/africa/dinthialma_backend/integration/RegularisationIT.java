@@ -84,9 +84,11 @@ class RegularisationIT extends AbstractIntegrationTest {
 
     TestDataFactory.attendre(
         api.put(cotisations + "/" + regularisation.path("id").asText() + "/valider", g, null), 200);
-    // Le tour remis ne change pas : le complément au bénéficiaire arrive avec les options de remise
+    // Le tour reste remis ; ses montants suivent les régularisations (lot 2, option DISPONIBLE)
     JsonNode tour = api.get("/v1/tontines/" + tontineId + "/cycles/" + cycleId, g).data();
     assertThat(tour.path("statut").asText()).isEqualTo("TERMINE");
-    assertThat(tour.path("montantJackpot").asInt()).isEqualTo(1000);
+    assertThat(tour.path("montantJackpot").asInt()).isEqualTo(3000);
+    assertThat(tour.path("montantNet").asInt()).isEqualTo(3000);
+    assertThat(tour.path("resteARecevoir").asInt()).isZero();
   }
 }

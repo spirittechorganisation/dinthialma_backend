@@ -784,6 +784,8 @@ Le gestionnaire choisit une **option par défaut** dans les réglages (`modeRemi
 - Quand le dernier tour est remis, l'app **suggère** la clôture (notification `TONTINE_PRETE_A_CLOTURER`) sans la faire.
 - Après clôture, l'encaissement des retards reste possible (suivi uniquement).
 
+- **Livré (2026-11-15), lot 2 — options de remise** : V043, `modeRemise` à la création, dans `PATCH /v1/tontines/{id}/reglages` (modifiable à tout moment, effet aux prochaines remises) et dans le corps facultatif de `PUT …/cloturer` ; aperçu `GET …/cycles/{cycleId}/remise/apercu` (`options[]` porte aussi `montantNet` et `montantARecuperer`) ; `CycleResponse` : `modeRemise`, `resteARecevoir`, `montantAvance` ; régularisation sur un tour remis : `montantJackpot`, `montantCommission`, `montantNet` et le `montantRecu` des gagnants sont recalculés, notifications `COMPLEMENT_A_REMETTRE` (gestionnaire) et `JACKPOT_DISTRIBUE` (bénéficiaires). **Écarts assumés** : `ATTENDRE` → 409, option inapplicable → 400 ; `AVANCE_COMMISSION` est refusée (pas basculée d'office) quand la commission ne couvre pas le manque ; un remboursement d'avance seul ne notifie personne ; `CAISSE` attend B29.
+
 - **Migration** : `modeRemise: DISPONIBLE` pour les tontines existantes (= fonctionnement actuel : remise de ce qui est validé) ; seule différence, les retards deviennent régularisables.
 - **Codes d'erreur** : `REMISE_JACKPOT_INCOMPLETE`, `MODE_REMISE_INDISPONIBLE`, `TONTINE_CLOTURE_A_CONFIRMER`.
 - **Critères d'acceptation** :
