@@ -47,6 +47,7 @@ import com.africa.dinthialma_backend.tontine.entity.Tontine;
 import com.africa.dinthialma_backend.tontine.repository.CycleGagnantRepository;
 import com.africa.dinthialma_backend.tontine.repository.CycleTontineRepository;
 import com.africa.dinthialma_backend.tontine.repository.DistributionEvenementielleRepository;
+import com.africa.dinthialma_backend.tontine.repository.EcheanceCycleRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -92,6 +93,7 @@ public class MeServiceImpl implements MeService {
   private final ActiviteRepository activiteRepository;
   private final PrioriteJackpotService prioriteService;
   private final SuiviTourService suiviTour;
+  private final EcheanceCycleRepository echeanceRepository;
 
   // ─── Résumé « Je cotise » ────────────────────────────────────────────────
 
@@ -155,7 +157,8 @@ public class MeServiceImpl implements MeService {
       Map<UUID, Long> toursParTontine,
       Map<UUID, Long> toursPayesParMembre,
       Map<UUID, CycleTontine> cycleEnCoursParTontine,
-      Map<UUID, List<Cotisation>> cotisationsEnCoursParMembre) {}
+      Map<UUID, List<Cotisation>> cotisationsEnCoursParMembre,
+      Map<UUID, List<Object[]>> aRegulariserParMembre) {}
 
   private AgregatsSummary chargerAgregats(List<TontineMembre> memberships) {
     List<UUID> membreIds = memberships.stream().map(TontineMembre::getId).toList();
@@ -185,7 +188,43 @@ public class MeServiceImpl implements MeService {
         toursParTontine,
         suiviTour.toursPayes(membreIds, tontineIds),
         cycleEnCoursParTontine,
-        cotisationsEnCours(cycleEnCoursParTontine.values(), membreIds));
+        cotisationsEnCours(cycleEnCoursParTontine.values(), membreIds),
+        echeanceRepository.findARegulariserByMembreIds(membreIds).stream()
+            .collect(Collectors.groupingBy(ligne -> (UUID) ligne[2])));
+  }
+
+  /**
+   * Échéances de tours remis encore impayées (B33) : membership ACTIF, échéances postérieures à
+   * l'adhésion (un membre arrivé en cours ne doit pas les tours d'avant).
+   */
+  private static List<MeSummaryResponse.EcheanceARegulariser> aRegulariser(
+      TontineMembre m, List<Object[]> lignes) {
+    if (m.getStatut() != MembreStatut.ACTIF) {
+      return List.of();
+    }
+    BigDecimal montant = m.getTontine().getMontantAttenduParMembre();
+    return lignes.stream()
+        .filter(
+            ligne ->
+                m.getDateAdhesion() == null
+                    || !((EcheanceCycle) ligne[0])
+                        .getEcheanceAt()
+                        .toLocalDate()
+                        .isBefore(m.getDateAdhesion()))
+        .map(
+            ligne -> {
+              EcheanceCycle e = (EcheanceCycle) ligne[0];
+              CycleTontine c = (CycleTontine) ligne[1];
+              return MeSummaryResponse.EcheanceARegulariser.builder()
+                  .cycleId(c.getId())
+                  .numeroCycle(c.getNumeroCycle())
+                  .echeanceId(e.getId())
+                  .numeroEcheance(e.getNumero())
+                  .echeanceAt(Fuseau.versOffset(e.getEcheanceAt()))
+                  .montant(montant)
+                  .build();
+            })
+        .toList();
   }
 
   /** [membreId, montant, nombre] : jackpots ROTATIVE + distribution finale EVENEMENTIELLE. */
@@ -251,6 +290,8 @@ public class MeServiceImpl implements MeService {
         .toursPayes(agregats.toursPayesParMembre().getOrDefault(m.getId(), 0L))
         .toursTotal(agregats.toursParTontine().getOrDefault(t.getId(), 0L))
         .cycleEnCours(cycleEnCours(cycle))
+        .echeancesARegulariser(
+            aRegulariser(m, agregats.aRegulariserParMembre().getOrDefault(m.getId(), List.of())))
         .cotisationDue(
             buildCotisationDue(
                 t,

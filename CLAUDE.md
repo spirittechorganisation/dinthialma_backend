@@ -101,11 +101,11 @@
 |----------|---------|------|--------|-------|-------------|-------|
 | `/` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 ¹MEMBER voit les siennes seulement ; filtres `?cycleId=`, `?membreId=` (admin uniquement, ignoré pour MEMBER), `?statut=` (multi) et `?q=` (nom, téléphone, référence) — filtre tontine toujours appliqué |
 | `/{id}` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 |
-| `/` | POST | ❌ | ✅¹ | ❌ | ✅ | 🔒 le cotisant enregistre son paiement ; B32 : `echeanceId` facultatif (défaut = échéance courante), une cotisation active par membre **et par échéance** (409), échéance future → `ECHEANCE_NON_OUVERTE`, inconnue → 404 `ECHEANCE_INTROUVABLE`, échéance passée = régularisation |
-| `/admin` | POST | ❌ | ❌ | ✅² | ✅ | 🔒 saisie admin pour n'importe quel membre (y compris PRE_ENROLLED), créée directement VALIDE ; `datePaiement` optionnelle (≤ maintenant, ≥ début du tour) pour la ponctualité ; `echeanceId` comme la déclaration (B32) |
-| `/{id}` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 correction (champs non-null) : EN_ATTENTE ou VALIDE + cycle EN_COURS ; refusé si cycle TERMINE ou EN_RETARD |
-| `/{id}/valider` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 EN_ATTENTE → VALIDE ; B32 : en `TOUS_PAYES`, la validation qui complète le tour le clôture (AUTOMATIQUE) ou notifie `JACKPOT_PRET` (MANUEL) — idem `/admin` |
-| `/{id}/refuser` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 EN_ATTENTE → REFUSE, `motif` obligatoire ; notifie le membre (`COTISATION_REFUSEE`) ; le membre peut redéclarer sur le même cycle |
+| `/` | POST | ❌ | ✅¹ | ❌ | ✅ | 🔒 le cotisant enregistre son paiement ; B32 : `echeanceId` facultatif (défaut = échéance courante), une cotisation active par membre **et par échéance** (409), échéance future → `ECHEANCE_NON_OUVERTE`, inconnue → 404 `ECHEANCE_INTROUVABLE`, échéance passée = régularisation ; B33 : accepté aussi sur un tour TERMINE (sans `echeanceId` = première échéance impayée du membre), tour EN_ATTENTE → `NO_CYCLE_IN_PROGRESS`, événementielle après distribution finale → `REGULARISATION_IMPOSSIBLE` |
+| `/admin` | POST | ❌ | ❌ | ✅² | ✅ | 🔒 saisie admin pour n'importe quel membre (y compris PRE_ENROLLED), créée directement VALIDE ; `datePaiement` optionnelle (≤ maintenant, ≥ début du tour) pour la ponctualité ; `echeanceId` et tour TERMINE comme la déclaration (B32, B33) |
+| `/{id}` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 correction (champs non-null) : EN_ATTENTE, EN_RETARD (B33), ou VALIDE sur un cycle EN_COURS ; refusé si REFUSE ou VALIDE sur un cycle TERMINE |
+| `/{id}/valider` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 EN_ATTENTE ou EN_RETARD (B33) → VALIDE ; B32 : en `TOUS_PAYES`, la validation qui complète le tour le clôture (AUTOMATIQUE) ou notifie `JACKPOT_PRET` (MANUEL) — idem `/admin` |
+| `/{id}/refuser` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 EN_ATTENTE ou EN_RETARD (B33) → REFUSE, `motif` obligatoire ; notifie le membre (`COTISATION_REFUSEE`) ; le membre peut redéclarer sur le même cycle |
 | `/recap/{cycleId}` | GET | ❌ | ❌ | ✅² | ✅ | 🔒 statut de cotisation par membre pour un cycle (pageable, SORTI exclus) ; B32 : champs sur l'échéance de référence (`?echeanceId=`, défaut courante) + `nombreEcheances`, `echeancesDues`, `echeancesPayees`, `echeances[]` |
 | `/recap-total` | GET | ❌ | ❌ | ✅² | ✅ | 🔒 total VALIDÉ cumulé par membre, tous cycles (pageable, SORTI exclus) |
 
@@ -161,7 +161,7 @@
 
 | Endpoint | Méthode | USER | MEMBER | ADMIN | SUPER_ADMIN | Notes |
 |----------|---------|------|--------|-------|-------------|-------|
-| `/summary` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 résumé « Je cotise » : par tontine où je cotise (membership, totaux, tours, tour EN_COURS, `cotisationDue` A_PAYER/EN_ATTENTE/VALIDE, gestionnaire) + totaux et jackpots reçus ; par tontine `totalJackpotsRecus` / `nombreJackpotsRecus` (0 si rien ; en EVENEMENTIELLE = part de la distribution finale) ; liste non paginée |
+| `/summary` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 résumé « Je cotise » : par tontine où je cotise (membership, totaux, tours, tour EN_COURS, `cotisationDue` A_PAYER/EN_ATTENTE/VALIDE, `echeancesARegulariser` (B33 : échéances impayées de tours remis), gestionnaire) + totaux et jackpots reçus ; par tontine `totalJackpotsRecus` / `nombreJackpotsRecus` (0 si rien ; en EVENEMENTIELLE = part de la distribution finale) ; liste non paginée |
 | `/gestion/cotisations` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 paiements de **toutes les tontines que j'ai créées** (file « À valider »), filtres `?statut=` (multi), `?tontineId=`, `?q=` ; pageable |
 | `/gestion/cotisations/valider` | POST | ✅ | ✅ | ✅ | ✅ | 🔒 validation groupée `{cotisationIds}` (1–100) ; chaque cotisation dans sa propre transaction, résultat par id avec `code` d'échec ; toujours 200 |
 | `/jackpots` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 reçus (`nature` JACKPOT \| DISTRIBUTION_FINALE, tri date DESC) + `aVenir` (ROTATION : rang, tour et date estimés ; TIRAGE / CHOIX : sans estimation) |
@@ -939,6 +939,11 @@ cd docker && docker compose up -d
       lot 2 : cotisations par échéance (déclaration, ponctualité, récap, rappels, V042)    ✅
       lot 3 : jackpot prévu × N, remise TOUS_PAYES (clôture auto / JACKPOT_PRET), tableaux de bord,
               toursPayes et QR par échéance (SuiviTourService)                             ✅
+  B33 Cotisation séparée de la remise
+      lot 1 : régularisation (tour TERMINE payable, EN_RETARD validable, echeancesARegulariser)  ✅
+      lot 2 : options de remise (modeRemise, aperçu, compléments)                          🔲
+      lot 4 : clôture de la tontine                                                        🔲
+      lot 3 : tours ouverts à leur date (ouvertureTours), remise automatique à l'échéance  🔲
 ```
 
 ---
@@ -1034,6 +1039,25 @@ l'ouverture manuelle et la simulation (`GET /v1/tontines/simulation`).
   lui-même. Sans paiement complet, rien ne se clôture à l'échéance (`COTISATIONS_MANQUANTES` part, B26) ; le
   gestionnaire peut toujours clôturer. `FIN_DU_TOUR` : clôture par le gestionnaire, comme avant B32. Le rappel
   quotidien de 8h porte sur chaque cotisation EN_ATTENTE (donc déjà par échéance).
+
+---
+
+## Cotisation séparée de la remise (B33)
+
+Décisions du 2026-11-15 : **le comportement des tontines existantes ne change pas** sans choix du
+gestionnaire. Lots : 1 régularisation ✅ · 2 options de remise · 4 clôture de la tontine · 3 tours
+ouverts à leur date (réglage `ouvertureTours` : existantes `A_LA_REMISE`, nouvelles `A_LA_DATE` par
+défaut) et remise automatique à l'échéance (réglage, désactivé par défaut).
+
+- **Lot 1 — régularisation** (toutes les tontines) : un tour TERMINE accepte encore la déclaration du
+  membre et l'encaissement du gestionnaire sur une échéance ouverte impayée ; sans `echeanceId`, c'est la
+  première échéance impayée du membre. Une cotisation `EN_RETARD` (non validée à la clôture) se valide,
+  se refuse ou se corrige. La ponctualité reste celle de S01. Événementielle : plus aucun paiement une
+  fois la distribution finale enregistrée (`REGULARISATION_IMPOSSIBLE`).
+- `/me/summary` : `echeancesARegulariser` par tontine rotative (membership ACTIF, échéances postérieures à
+  l'adhésion), avec `cycleId` et `echeanceId` à renvoyer pour payer.
+- Tant que le lot 2 n'est pas livré, une régularisation validée sur un tour remis est enregistrée mais ne
+  modifie pas le tour (`montantJackpot`, gagnants) : le complément au bénéficiaire arrive avec `modeRemise`.
 
 ---
 

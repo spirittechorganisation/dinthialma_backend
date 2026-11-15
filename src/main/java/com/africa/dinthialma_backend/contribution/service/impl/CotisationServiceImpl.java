@@ -45,6 +45,7 @@ import com.africa.dinthialma_backend.tontine.entity.CycleTontine;
 import com.africa.dinthialma_backend.tontine.entity.EcheanceCycle;
 import com.africa.dinthialma_backend.tontine.entity.Tontine;
 import com.africa.dinthialma_backend.tontine.repository.CycleTontineRepository;
+import com.africa.dinthialma_backend.tontine.repository.DistributionEvenementielleRepository;
 import com.africa.dinthialma_backend.tontine.repository.EcheanceCycleRepository;
 import com.africa.dinthialma_backend.tontine.repository.TontineRepository;
 import com.africa.dinthialma_backend.tontine.service.interfaces.CycleService;
@@ -83,6 +84,7 @@ public class CotisationServiceImpl implements CotisationService {
   private final WhatsappService whatsappService;
   private final NotificationService notificationService;
   private final CycleService cycleService;
+  private final DistributionEvenementielleRepository distributionRepository;
 
   // ─── Enregistrement ──────────────────────────────────────────────────────
 
@@ -102,13 +104,9 @@ public class CotisationServiceImpl implements CotisationService {
 
     CycleTontine cycle = findCycleById(tontineId, request.getCycleId());
 
-    if (cycle.getStatut() != CycleStatut.EN_COURS) {
-      throw new BadRequestException(
-          "Les cotisations ne sont acceptées que pour un cycle EN_COURS",
-          ErrorCode.NO_CYCLE_IN_PROGRESS);
-    }
+    verifierTourPayable(tontine, cycle);
 
-    EcheanceCycle echeance = echeancePayee(cycle, request.getEcheanceId());
+    EcheanceCycle echeance = echeancePayee(cycle, membre, request.getEcheanceId());
     verifierUnicite(
         cycle, echeance, membre, "Vous avez déjà enregistré une cotisation pour cette échéance");
 
@@ -225,13 +223,9 @@ public class CotisationServiceImpl implements CotisationService {
 
     CycleTontine cycle = findCycleById(tontineId, request.getCycleId());
 
-    if (cycle.getStatut() != CycleStatut.EN_COURS) {
-      throw new BadRequestException(
-          "Les cotisations ne sont acceptées que pour un cycle EN_COURS",
-          ErrorCode.NO_CYCLE_IN_PROGRESS);
-    }
+    verifierTourPayable(tontine, cycle);
 
-    EcheanceCycle echeance = echeancePayee(cycle, request.getEcheanceId());
+    EcheanceCycle echeance = echeancePayee(cycle, membre, request.getEcheanceId());
     verifierUnicite(
         cycle, echeance, membre, "Une cotisation existe déjà pour ce membre sur cette échéance");
 
@@ -361,9 +355,10 @@ public class CotisationServiceImpl implements CotisationService {
       throw new NotFoundException(ResponseMessageConstants.CONTRIBUTION_NOT_FOUND);
     }
 
-    if (cotisation.getStatut() != CotisationStatut.EN_ATTENTE) {
+    CotisationStatut ancienStatut = cotisation.getStatut();
+    if (!aTraiter(ancienStatut)) {
       throw new BadRequestException(
-          "Seule une cotisation EN_ATTENTE peut être validée (statut actuel : "
+          "Seule une cotisation EN_ATTENTE ou EN_RETARD peut être validée (statut actuel : "
               + cotisation.getStatut()
               + ")",
           ErrorCode.COTISATION_NOT_PENDING);
@@ -379,7 +374,7 @@ public class CotisationServiceImpl implements CotisationService {
         "cotisations",
         cotisationId,
         "statut",
-        CotisationStatut.EN_ATTENTE.name(),
+        ancienStatut.name(),
         CotisationStatut.VALIDE.name());
     log.info("Cotisation validée – cotisationId={} par userId={}", cotisationId, caller.getId());
 
@@ -475,9 +470,10 @@ public class CotisationServiceImpl implements CotisationService {
       throw new NotFoundException(ResponseMessageConstants.CONTRIBUTION_NOT_FOUND);
     }
 
-    if (cotisation.getStatut() != CotisationStatut.EN_ATTENTE) {
+    CotisationStatut ancienStatut = cotisation.getStatut();
+    if (!aTraiter(ancienStatut)) {
       throw new BadRequestException(
-          "Seule une cotisation EN_ATTENTE peut être refusée (statut actuel : "
+          "Seule une cotisation EN_ATTENTE ou EN_RETARD peut être refusée (statut actuel : "
               + cotisation.getStatut()
               + ")",
           ErrorCode.COTISATION_NOT_PENDING);
@@ -495,7 +491,7 @@ public class CotisationServiceImpl implements CotisationService {
         "cotisations",
         cotisationId,
         "statut",
-        CotisationStatut.EN_ATTENTE.name(),
+        ancienStatut.name(),
         CotisationStatut.REFUSE.name());
     log.info("Cotisation refusée – cotisationId={} par userId={}", cotisationId, caller.getId());
 
@@ -716,9 +712,8 @@ public class CotisationServiceImpl implements CotisationService {
       throw new NotFoundException(ResponseMessageConstants.CONTRIBUTION_NOT_FOUND);
     }
 
-    // EN_RETARD → cycle fermé ; REFUSE → statut final : modification interdite
-    if (cotisation.getStatut() == CotisationStatut.EN_RETARD
-        || cotisation.getStatut() == CotisationStatut.REFUSE) {
+    // REFUSE → statut final : modification interdite (EN_RETARD reste à valider, donc corrigeable)
+    if (cotisation.getStatut() == CotisationStatut.REFUSE) {
       throw new BadRequestException(
           ResponseMessageConstants.CONTRIBUTION_CANNOT_EDIT, ErrorCode.COTISATION_NOT_EDITABLE);
     }
@@ -878,10 +873,13 @@ public class CotisationServiceImpl implements CotisationService {
    * Échéance payée (B32) : celle désignée (régularisation d'une échéance passée), sinon l'échéance
    * courante du tour. Null seulement pour un tour sans échéance enregistrée (donnée antérieure).
    */
-  private EcheanceCycle echeancePayee(CycleTontine cycle, UUID echeanceId) throws CustomException {
+  private EcheanceCycle echeancePayee(CycleTontine cycle, TontineMembre membre, UUID echeanceId)
+      throws CustomException {
     LocalDateTime maintenant = Fuseau.maintenant();
     if (echeanceId == null) {
-      return EcheancesTour.courante(cycle, maintenant).orElse(null);
+      return cycle.getStatut() == CycleStatut.TERMINE
+          ? premiereARegulariser(cycle, membre, maintenant)
+          : EcheancesTour.courante(cycle, maintenant).orElse(null);
     }
     EcheanceCycle echeance =
         echeanceRepository
@@ -899,6 +897,43 @@ public class CotisationServiceImpl implements CotisationService {
           ErrorCode.ECHEANCE_NON_OUVERTE);
     }
     return echeance;
+  }
+
+  /**
+   * Régularisation sur un tour clôturé sans échéance désignée (B33) : la première échéance ouverte
+   * que le membre n'a pas payée ; s'il les a toutes payées, la dernière (l'unicité répond 409).
+   */
+  private EcheanceCycle premiereARegulariser(
+      CycleTontine cycle, TontineMembre membre, LocalDateTime maintenant) {
+    List<EcheanceCycle> ouvertes = EcheancesTour.ouvertes(cycle, maintenant);
+    return ouvertes.stream()
+        .filter(
+            e -> !cotisationRepository.existsActiveByEcheanceAndMembre(e.getId(), membre.getId()))
+        .findFirst()
+        .orElse(ouvertes.isEmpty() ? null : ouvertes.get(ouvertes.size() - 1));
+  }
+
+  /**
+   * Un paiement est accepté sur un tour EN_COURS, ou sur un tour TERMINE pour régulariser un retard
+   * (B33), sauf une fois la distribution finale d'une tontine événementielle faite.
+   */
+  private void verifierTourPayable(Tontine tontine, CycleTontine cycle) throws CustomException {
+    if (cycle.getStatut() == CycleStatut.EN_ATTENTE) {
+      throw new BadRequestException(
+          "Ce tour n'est pas encore ouvert aux cotisations", ErrorCode.NO_CYCLE_IN_PROGRESS);
+    }
+    if (cycle.getStatut() == CycleStatut.TERMINE
+        && tontine.getTontineType() == TontineType.EVENEMENTIELLE
+        && distributionRepository.existsByTontine_IdAndDeletedAtIsNull(tontine.getId())) {
+      throw new BadRequestException(
+          "La distribution finale est faite : cette tontine n'accepte plus de cotisation",
+          ErrorCode.REGULARISATION_IMPOSSIBLE);
+    }
+  }
+
+  /** Statuts qu'un gestionnaire peut encore valider ou refuser (EN_RETARD depuis B33). */
+  private static boolean aTraiter(CotisationStatut statut) {
+    return statut == CotisationStatut.EN_ATTENTE || statut == CotisationStatut.EN_RETARD;
   }
 
   /** Une cotisation active max par membre et par échéance (par tour sans échéance enregistrée). */

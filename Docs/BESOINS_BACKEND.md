@@ -746,6 +746,8 @@ Points d'attention :
 
 - **Décision (2026-11-15)** : remettre le jackpot automatiquement à l'échéance ou attendre que le gestionnaire appuie sur « Remettre » sont **deux options soumises à la décision du gestionnaire** (réglage de la tontine, désactivé par défaut = remise par le gestionnaire). Les tontines existantes gardent leur fonctionnement actuel : aucune clôture automatique n'apparaît sans choix explicite.
 
+- **Décision (2026-11-15), ouverture des tours** : réglage par tontine `ouvertureTours` (`A_LA_REMISE` | `A_LA_DATE`). Les tontines existantes restent `A_LA_REMISE` (le tour suivant ne s'ouvre qu'à la clôture du précédent, fonctionnement actuel) ; une **nouvelle** tontine est `A_LA_DATE` par défaut (chaque tour s'ouvre à sa date, remis ou non), le gestionnaire peut choisir l'autre valeur.
+
 #### 1. La cotisation ne dépend plus de la remise
 - La période de cotisation d'un tour (ses échéances, B32) **s'ouvre à sa date**, que le tour précédent soit remis ou non : plusieurs tours peuvent être ouverts en même temps.
 - **Remettre le jackpot** = clôturer le tour. Le gestionnaire décide quand (bouton « Remettre »), ou l'app le fait si `declenchementJackpot: TOUS_PAYES` (B32) et que le jackpot prévu est réuni.

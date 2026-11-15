@@ -156,6 +156,13 @@ public class MeSummaryResponse {
 
     @Schema(
         description =
+            "Échéances de tours déjà remis que je n'ai pas payées (B33, ROTATIVE, depuis mon"
+                + " adhésion) : elles restent payables en désignant `cycleId` et `echeanceId`."
+                + " Liste vide si rien")
+    private List<EcheanceARegulariser> echeancesARegulariser;
+
+    @Schema(
+        description =
             "Cotisation attendue sur le tour en cours – null si aucun tour en cours, tontine non"
                 + " ACTIVE ou membership non ACTIF",
         nullable = true)
@@ -163,6 +170,32 @@ public class MeSummaryResponse {
 
     @Schema(description = "Gestionnaire (créateur) de la tontine")
     private Gestionnaire gestionnaire;
+  }
+
+  @Schema(description = "Échéance impayée d'un tour déjà remis, encore payable (B33)")
+  @Getter
+  @Builder
+  public static class EcheanceARegulariser {
+
+    @Schema(description = "UUID du tour (à passer dans `cycleId`)")
+    private UUID cycleId;
+
+    @Schema(description = "Numéro du tour", example = "2")
+    private int numeroCycle;
+
+    @Schema(description = "UUID de l'échéance (à passer dans `echeanceId`)")
+    private UUID echeanceId;
+
+    @Schema(description = "Rang de l'échéance dans le tour", example = "3")
+    private int numeroEcheance;
+
+    @Schema(
+        description = "Limite de paiement dépassée, avec fuseau",
+        example = "2026-10-31T23:59:00Z")
+    private OffsetDateTime echeanceAt;
+
+    @Schema(description = "Montant attendu en FCFA", example = "5000", nullable = true)
+    private BigDecimal montant;
   }
 
   @Schema(description = "Tour EN_COURS d'une tontine")

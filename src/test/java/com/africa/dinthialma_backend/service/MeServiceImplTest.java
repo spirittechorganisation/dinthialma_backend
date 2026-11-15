@@ -54,6 +54,7 @@ import com.africa.dinthialma_backend.tontine.entity.Tontine;
 import com.africa.dinthialma_backend.tontine.repository.CycleGagnantRepository;
 import com.africa.dinthialma_backend.tontine.repository.CycleTontineRepository;
 import com.africa.dinthialma_backend.tontine.repository.DistributionEvenementielleRepository;
+import com.africa.dinthialma_backend.tontine.repository.EcheanceCycleRepository;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -97,6 +98,7 @@ class MeServiceImplTest {
   @Mock private DistributionEvenementielleRepository distributionRepository;
   @Mock private PrioriteJackpotService prioriteService;
   @Mock private SuiviTourService suiviTour;
+  @Mock private EcheanceCycleRepository echeanceRepository;
   @InjectMocks private MeServiceImpl service;
 
   private User moi;
@@ -138,6 +140,58 @@ class MeServiceImplTest {
       assertThat(r.getTotalCotiseValide()).isEqualByComparingTo("0");
       assertThat(r.getTotalJackpotsRecus()).isEqualByComparingTo("5000");
       assertThat(r.getNombreCotisationsDues()).isZero();
+    }
+
+    @Test
+    @DisplayName(
+        "B33, échéances à régulariser : tours remis impayés depuis mon adhésion ; rien si je ne"
+            + " suis plus ACTIF")
+    void echeancesARegulariser() throws Exception {
+      Tontine t = Fixtures.tontine(gestionnaire);
+      Tontine autre = Fixtures.tontine(gestionnaire);
+      TontineMembre actif = Fixtures.membre(t, moi, 1);
+      actif.setDateAdhesion(LocalDate.now().minusDays(10));
+      TontineMembre suspendu = Fixtures.membre(autre, moi, 1);
+      suspendu.setStatut(MembreStatut.SUSPENDU);
+      mesAdhesions(actif, suspendu);
+      when(gagnantRepository.sumMontantRecuByUserId(moi.getId())).thenReturn(BigDecimal.ZERO);
+      CycleTontine remis = Fixtures.cycle(t, 2, CycleStatut.TERMINE);
+      EcheanceCycle avantAdhesion =
+          EcheanceCycle.builder()
+              .id(UUID.randomUUID())
+              .cycle(remis)
+              .numero(1)
+              .dateDebut(LocalDate.now().minusDays(30))
+              .echeanceAt(LocalDate.now().minusDays(20).atTime(23, 59))
+              .build();
+      EcheanceCycle due =
+          EcheanceCycle.builder()
+              .id(UUID.randomUUID())
+              .cycle(remis)
+              .numero(2)
+              .dateDebut(LocalDate.now().minusDays(9))
+              .echeanceAt(LocalDate.now().minusDays(3).atTime(23, 59))
+              .build();
+      when(echeanceRepository.findARegulariserByMembreIds(anyList()))
+          .thenReturn(
+              List.of(
+                  new Object[] {avantAdhesion, remis, actif.getId()},
+                  new Object[] {due, remis, actif.getId()},
+                  new Object[] {due, remis, suspendu.getId()}));
+
+      MeSummaryResponse r = service.getSummary(kc);
+
+      assertThat(r.getTontines().get(0).getEcheancesARegulariser())
+          .singleElement()
+          .satisfies(
+              e -> {
+                assertThat(e.getCycleId()).isEqualTo(remis.getId());
+                assertThat(e.getNumeroCycle()).isEqualTo(2);
+                assertThat(e.getEcheanceId()).isEqualTo(due.getId());
+                assertThat(e.getNumeroEcheance()).isEqualTo(2);
+                assertThat(e.getMontant()).isEqualByComparingTo("1000");
+              });
+      assertThat(r.getTontines().get(1).getEcheancesARegulariser()).isEmpty();
     }
 
     @Test

@@ -52,6 +52,7 @@ import com.africa.dinthialma_backend.tontine.entity.CycleTontine;
 import com.africa.dinthialma_backend.tontine.entity.EcheanceCycle;
 import com.africa.dinthialma_backend.tontine.entity.Tontine;
 import com.africa.dinthialma_backend.tontine.repository.CycleTontineRepository;
+import com.africa.dinthialma_backend.tontine.repository.DistributionEvenementielleRepository;
 import com.africa.dinthialma_backend.tontine.repository.EcheanceCycleRepository;
 import com.africa.dinthialma_backend.tontine.repository.TontineRepository;
 import com.africa.dinthialma_backend.tontine.service.interfaces.CycleService;
@@ -95,6 +96,7 @@ class CotisationServiceImplTest {
   @Mock private WhatsappService whatsappService;
   @Mock private NotificationService notificationService;
   @Mock private CycleService cycleService;
+  @Mock private DistributionEvenementielleRepository distributionRepository;
   @InjectMocks private CotisationServiceImpl service;
 
   private User gestionnaire;
@@ -217,7 +219,7 @@ class CotisationServiceImplTest {
 
     @Test
     @DisplayName(
-        "refus : non membre (403), cycle non EN_COURS, déjà déclarée (409), cycle inconnu (404)")
+        "refus : non membre (403), tour pas encore ouvert, déjà déclarée (409), cycle inconnu (404)")
     void refus() {
       assertThatThrownBy(
               () ->
@@ -233,7 +235,7 @@ class CotisationServiceImplTest {
                       awa.getKeycloakId(), tontine.getId(), declaration("1000")))
           .satisfies(e -> code(e, ErrorCode.COTISATION_ALREADY_EXISTS));
 
-      cycle.setStatut(CycleStatut.TERMINE);
+      cycle.setStatut(CycleStatut.EN_ATTENTE);
       assertThatThrownBy(
               () ->
                   service.recordCotisation(
@@ -489,8 +491,34 @@ class CotisationServiceImplTest {
     }
 
     @Test
+    @DisplayName("B33 : une cotisation EN_RETARD (non validée à la clôture) se valide ou se refuse")
+    void enRetardTraitable() throws Exception {
+      cycle.setStatut(CycleStatut.TERMINE);
+      Cotisation c = existante(CotisationStatut.EN_RETARD);
+
+      CotisationResponse r =
+          service.validateCotisation(gestionnaire.getKeycloakId(), tontine.getId(), c.getId());
+
+      assertThat(r.getStatut()).isEqualTo(CotisationStatut.VALIDE);
+      verify(auditService)
+          .log(gestionnaire, "cotisations", c.getId(), "statut", "EN_RETARD", "VALIDE");
+
+      Cotisation autre = existante(CotisationStatut.EN_RETARD);
+      RefuseCotisationRequest motif = new RefuseCotisationRequest();
+      motif.setMotif("Paiement jamais reçu");
+      assertThat(
+              service
+                  .refuseCotisation(
+                      gestionnaire.getKeycloakId(), tontine.getId(), autre.getId(), motif)
+                  .getStatut())
+          .isEqualTo(CotisationStatut.REFUSE);
+      verify(auditService)
+          .log(gestionnaire, "cotisations", autre.getId(), "statut", "EN_RETARD", "REFUSE");
+    }
+
+    @Test
     @DisplayName(
-        "hors EN_ATTENTE (COTISATION_NOT_PENDING), autre tontine ou inconnue (404), tiers (403)")
+        "déjà VALIDE (COTISATION_NOT_PENDING), autre tontine ou inconnue (404), tiers (403)")
     void transitionsInterdites() {
       Cotisation valide = existante(CotisationStatut.VALIDE);
       RefuseCotisationRequest req = new RefuseCotisationRequest();
@@ -708,17 +736,24 @@ class CotisationServiceImplTest {
                       valide.getId(),
                       req(null, null, null, "x")))
           .satisfies(e -> code(e, ErrorCode.COTISATION_NOT_EDITABLE));
-      for (CotisationStatut s : List.of(CotisationStatut.EN_RETARD, CotisationStatut.REFUSE)) {
-        Cotisation c = existante(s);
-        assertThatThrownBy(
-                () ->
-                    service.updateCotisation(
-                        gestionnaire.getKeycloakId(),
-                        tontine.getId(),
-                        c.getId(),
-                        req(null, null, null, "x")))
-            .satisfies(e -> code(e, ErrorCode.COTISATION_NOT_EDITABLE));
-      }
+      Cotisation refusee = existante(CotisationStatut.REFUSE);
+      assertThatThrownBy(
+              () ->
+                  service.updateCotisation(
+                      gestionnaire.getKeycloakId(),
+                      tontine.getId(),
+                      refusee.getId(),
+                      req(null, null, null, "x")))
+          .satisfies(e -> code(e, ErrorCode.COTISATION_NOT_EDITABLE));
+      // B33 : une cotisation EN_RETARD reste à valider, donc corrigeable même tour clôturé
+      Cotisation enRetard = existante(CotisationStatut.EN_RETARD);
+      assertThat(
+              service.updateCotisation(
+                  gestionnaire.getKeycloakId(),
+                  tontine.getId(),
+                  enRetard.getId(),
+                  req(null, null, null, "ok")))
+          .isNotNull();
     }
 
     @Test
@@ -872,6 +907,67 @@ class CotisationServiceImplTest {
       passee = echeance(1, aujourdhui.minusDays(14), aujourdhui.minusDays(8));
       enCours = echeance(2, aujourdhui.minusDays(7), aujourdhui.plusDays(2));
       aVenir = echeance(3, aujourdhui.plusDays(3), aujourdhui.plusDays(9));
+    }
+
+    @Test
+    @DisplayName(
+        "B33, tour clôturé sans echeanceId : première échéance ouverte impayée ; toutes payées"
+            + " -> 409")
+    void regularisationTourCloture() throws Exception {
+      cycle.setStatut(CycleStatut.TERMINE);
+      when(cotisationRepository.existsActiveByEcheanceAndMembre(passee.getId(), membre.getId()))
+          .thenReturn(true);
+
+      CotisationResponse r =
+          service.recordCotisation(awa.getKeycloakId(), tontine.getId(), declaration("1000"));
+
+      assertThat(r.getStatut()).isEqualTo(CotisationStatut.EN_ATTENTE);
+      assertThat(r.getEcheanceId()).isEqualTo(enCours.getId());
+
+      when(cotisationRepository.existsActiveByEcheanceAndMembre(enCours.getId(), membre.getId()))
+          .thenReturn(true);
+      assertThatThrownBy(
+              () ->
+                  service.recordCotisation(
+                      awa.getKeycloakId(), tontine.getId(), declaration("1000")))
+          .satisfies(e -> code(e, ErrorCode.COTISATION_ALREADY_EXISTS));
+    }
+
+    @Test
+    @DisplayName("B33, encaissement d'une échéance passée sur un tour clôturé : créée VALIDE")
+    void encaissementTourCloture() throws Exception {
+      cycle.setStatut(CycleStatut.TERMINE);
+      AdminRecordCotisationRequest saisie = saisie("1000", null);
+      saisie.setEcheanceId(passee.getId());
+
+      CotisationResponse r =
+          service.adminRecordCotisation(gestionnaire.getKeycloakId(), tontine.getId(), saisie);
+
+      assertThat(r.getStatut()).isEqualTo(CotisationStatut.VALIDE);
+      assertThat(r.getEcheanceId()).isEqualTo(passee.getId());
+      assertThat(r.getPonctualite()).isEqualTo(Ponctualite.EN_RETARD);
+    }
+
+    @Test
+    @DisplayName(
+        "B33, événementielle : sous-cycle clôturé payable, sauf distribution finale faite"
+            + " (REGULARISATION_IMPOSSIBLE)")
+    void evenementielleApresDistribution() throws Exception {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      cycle.setStatut(CycleStatut.TERMINE);
+      when(distributionRepository.existsByTontine_IdAndDeletedAtIsNull(tontine.getId()))
+          .thenReturn(false);
+      assertThat(
+              service.recordCotisation(awa.getKeycloakId(), tontine.getId(), declaration("1000")))
+          .isNotNull();
+
+      when(distributionRepository.existsByTontine_IdAndDeletedAtIsNull(tontine.getId()))
+          .thenReturn(true);
+      assertThatThrownBy(
+              () ->
+                  service.recordCotisation(
+                      awa.getKeycloakId(), tontine.getId(), declaration("1000")))
+          .satisfies(e -> code(e, ErrorCode.REGULARISATION_IMPOSSIBLE));
     }
 
     @Test
