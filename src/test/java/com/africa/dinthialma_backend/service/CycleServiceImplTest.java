@@ -19,6 +19,8 @@ import com.africa.dinthialma_backend.auth.repository.UserRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRoleAssignmentRepository;
 import com.africa.dinthialma_backend.common.audit.AuditService;
 import com.africa.dinthialma_backend.common.exception.BadRequestException;
+import com.africa.dinthialma_backend.common.exception.ConflictException;
+import com.africa.dinthialma_backend.common.exception.CustomException;
 import com.africa.dinthialma_backend.common.exception.ErrorCode;
 import com.africa.dinthialma_backend.common.exception.ForbiddenException;
 import com.africa.dinthialma_backend.common.exception.NotFoundException;
@@ -41,10 +43,12 @@ import com.africa.dinthialma_backend.tontine.codeList.CommissionType;
 import com.africa.dinthialma_backend.tontine.codeList.CycleStatut;
 import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
+import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.StatutEcheance;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import com.africa.dinthialma_backend.tontine.codeList.UniteRythme;
+import com.africa.dinthialma_backend.tontine.dto.CloturerCycleRequest;
 import com.africa.dinthialma_backend.tontine.dto.CycleResponse;
 import com.africa.dinthialma_backend.tontine.dto.OpenCycleRequest;
 import com.africa.dinthialma_backend.tontine.dto.PropositionTourResponse;
@@ -1163,6 +1167,114 @@ class CycleServiceImplTest {
 
       assertThat(r.getMontantJackpotPrevu()).isEqualByComparingTo("3000");
       assertThat(r.isTousPayes()).isTrue();
+    }
+  }
+
+  @Nested
+  @DisplayName("options de remise à la clôture (B33)")
+  class OptionsDeRemise {
+
+    private CycleTontine tour;
+    private List<TontineMembre> membres;
+
+    private CloturerCycleRequest avec(ModeRemise mode) {
+      CloturerCycleRequest r = new CloturerCycleRequest();
+      r.setModeRemise(mode);
+      return r;
+    }
+
+    /** 4 membres à 1 000 F, 3 payés, commission 10 % : prévu 4 000 F, collecté 3 000 F. */
+    @BeforeEach
+    void troisPayesSurQuatre() {
+      membres = membresActifs(4);
+      tour = cycleConnu(1, CycleStatut.EN_COURS);
+      lenient()
+          .when(suiviTour.etat(tour))
+          .thenReturn(new EtatTour(4, 1, new BigDecimal("4000"), false, null, 1, 3, 0));
+      lenient()
+          .when(
+              cotisationRepository.findByCycle_IdAndStatutAndDeletedAtIsNull(
+                  tour.getId(), CotisationStatut.VALIDE))
+          .thenReturn(
+              List.of(
+                  cotisation(membres.get(0), tour, CotisationStatut.VALIDE, "1000"),
+                  cotisation(membres.get(1), tour, CotisationStatut.VALIDE, "1000"),
+                  cotisation(membres.get(2), tour, CotisationStatut.VALIDE, "1000")));
+      lenient()
+          .when(commissionRepository.findByTontine_IdAndDeletedAtIsNull(tontine.getId()))
+          .thenReturn(List.of(commission(CommissionType.POURCENTAGE_JACKPOT, "10")));
+    }
+
+    @Test
+    @DisplayName("sans option : réglage de la tontine (DISPONIBLE), reste à recevoir suivi")
+    void parDefaut() throws Exception {
+      CycleResponse r = service.closeCycle(kc, tontine.getId(), tour.getId());
+
+      assertThat(r.getModeRemise()).isEqualTo(ModeRemise.DISPONIBLE);
+      assertThat(r.getMontantJackpot()).isEqualByComparingTo("3000");
+      assertThat(r.getMontantCommission()).isEqualByComparingTo("300");
+      assertThat(r.getMontantNet()).isEqualByComparingTo("2700");
+      assertThat(r.getMontantJackpotPrevu()).isEqualByComparingTo("4000");
+      assertThat(r.getResteARecevoir()).isEqualByComparingTo("900");
+      assertThat(r.getMontantAvance()).isEqualByComparingTo("0");
+      assertThat(r.getGagnants().get(0).getMontantRecu()).isEqualByComparingTo("2700");
+    }
+
+    @Test
+    @DisplayName("ATTENDRE avec un manque : 409 REMISE_JACKPOT_INCOMPLETE, tour inchangé")
+    void attendre() {
+      tontine.setModeRemise(ModeRemise.ATTENDRE);
+
+      assertThatThrownBy(() -> service.closeCycle(kc, tontine.getId(), tour.getId()))
+          .isInstanceOf(ConflictException.class)
+          .satisfies(
+              e ->
+                  assertThat(((CustomException) e).getCode())
+                      .isEqualTo(ErrorCode.REMISE_JACKPOT_INCOMPLETE));
+      assertThat(tour.getStatut()).isEqualTo(CycleStatut.EN_COURS);
+    }
+
+    @Test
+    @DisplayName("option choisie à la remise : elle prime sur le réglage de la tontine")
+    void optionChoisie() throws Exception {
+      tontine.setModeRemise(ModeRemise.ATTENDRE);
+
+      CycleResponse r =
+          service.closeCycle(
+              kc, tontine.getId(), tour.getId(), avec(ModeRemise.AVANCE_GESTIONNAIRE));
+
+      assertThat(r.getModeRemise()).isEqualTo(ModeRemise.AVANCE_GESTIONNAIRE);
+      // Le bénéficiaire reçoit le net prévu (3 600 F) : commission abandonnée + 600 F de poche
+      assertThat(r.getMontantNet()).isEqualByComparingTo("3600");
+      assertThat(r.getMontantCommission()).isEqualByComparingTo("0");
+      assertThat(r.getMontantAvance()).isEqualByComparingTo("600");
+      assertThat(r.getResteARecevoir()).isEqualByComparingTo("0");
+      assertThat(r.getGagnants().get(0).getMontantRecu()).isEqualByComparingTo("3600");
+    }
+
+    @Test
+    @DisplayName(
+        "AVANCE_COMMISSION que la commission ne couvre pas, ou CAISSE : 400"
+            + " MODE_REMISE_INDISPONIBLE")
+    void optionIndisponible() {
+      for (ModeRemise mode : List.of(ModeRemise.AVANCE_COMMISSION, ModeRemise.CAISSE)) {
+        assertThatThrownBy(() -> service.closeCycle(kc, tontine.getId(), tour.getId(), avec(mode)))
+            .isInstanceOf(BadRequestException.class)
+            .satisfies(
+                e ->
+                    assertThat(((CustomException) e).getCode())
+                        .isEqualTo(ErrorCode.MODE_REMISE_INDISPONIBLE));
+      }
+      assertThat(tour.getStatut()).isEqualTo(CycleStatut.EN_COURS);
+    }
+
+    @Test
+    @DisplayName("corps sans modeRemise : réglage de la tontine")
+    void corpsVide() throws Exception {
+      CycleResponse r =
+          service.closeCycle(kc, tontine.getId(), tour.getId(), new CloturerCycleRequest());
+
+      assertThat(r.getModeRemise()).isEqualTo(ModeRemise.DISPONIBLE);
     }
   }
 }

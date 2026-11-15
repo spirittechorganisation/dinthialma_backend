@@ -49,6 +49,7 @@ import com.africa.dinthialma_backend.tontine.repository.DistributionEvenementiel
 import com.africa.dinthialma_backend.tontine.repository.EcheanceCycleRepository;
 import com.africa.dinthialma_backend.tontine.repository.TontineRepository;
 import com.africa.dinthialma_backend.tontine.service.interfaces.CycleService;
+import com.africa.dinthialma_backend.tontine.service.interfaces.RemiseService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -84,6 +85,7 @@ public class CotisationServiceImpl implements CotisationService {
   private final WhatsappService whatsappService;
   private final NotificationService notificationService;
   private final CycleService cycleService;
+  private final RemiseService remiseService;
   private final DistributionEvenementielleRepository distributionRepository;
 
   // ─── Enregistrement ──────────────────────────────────────────────────────
@@ -329,8 +331,10 @@ public class CotisationServiceImpl implements CotisationService {
       log.warn("Notif WA admin (admin-record) non envoyée : {}", e.getMessage());
     }
 
-    // Remise du jackpot si tous ont payé (B32, TOUS_PAYES), après les notifications
+    // Après les notifications : remise si tous ont payé (B32, TOUS_PAYES) ; sur un tour déjà
+    // remis, la régularisation complète les bénéficiaires ou rembourse l'avance (B33)
     cycleService.remettreSiTousPayes(keycloakId, tontineId, cycle.getId());
+    remiseService.regulariser(cycle);
 
     return cotisationMapper.toResponse(saved);
   }
@@ -443,8 +447,10 @@ public class CotisationServiceImpl implements CotisationService {
       log.warn("Notif WA admin (validation) non envoyée : {}", e.getMessage());
     }
 
-    // Remise du jackpot si tous ont payé (B32, TOUS_PAYES), après les notifications
+    // Après les notifications : remise si tous ont payé (B32, TOUS_PAYES) ; sur un tour déjà
+    // remis, la régularisation complète les bénéficiaires ou rembourse l'avance (B33)
     cycleService.remettreSiTousPayes(keycloakId, tontineId, saved.getCycle().getId());
+    remiseService.regulariser(saved.getCycle());
 
     return cotisationMapper.toResponse(saved);
   }

@@ -5,10 +5,13 @@ import com.africa.dinthialma_backend.common.exception.CustomException;
 import com.africa.dinthialma_backend.common.response.CustomResponse;
 import com.africa.dinthialma_backend.common.util.RequestHeaderParser;
 import com.africa.dinthialma_backend.tontine.dto.BeneficiaireHistoriqueResponse;
+import com.africa.dinthialma_backend.tontine.dto.CloturerCycleRequest;
 import com.africa.dinthialma_backend.tontine.dto.CycleResponse;
 import com.africa.dinthialma_backend.tontine.dto.OpenCycleRequest;
+import com.africa.dinthialma_backend.tontine.dto.RemiseApercuResponse;
 import com.africa.dinthialma_backend.tontine.dto.SelectionnerBeneficiaireRequest;
 import com.africa.dinthialma_backend.tontine.service.interfaces.CycleService;
+import com.africa.dinthialma_backend.tontine.service.interfaces.RemiseService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -63,6 +66,7 @@ public class CycleController {
   private static final int CREATED = 201;
 
   private final CycleService cycleService;
+  private final RemiseService remiseService;
   private final RequestHeaderParser headerParser;
 
   // ─── Historique bénéficiaires ────────────────────────────────────────────
@@ -242,6 +246,40 @@ public class CycleController {
             new CustomResponse(SUCCESS, CREATED, ResponseMessageConstants.CYCLE_OPENED, response));
   }
 
+  // ─── Aperçu de la remise ─────────────────────────────────────────────────
+
+  @GetMapping("/{cycleId}/remise/apercu")
+  @Operation(
+      summary = "Aperçu avant la remise du jackpot (B33)",
+      description =
+          "🔒 Rôles : créateur de la tontine, SUPER_ADMIN. Tour EN_COURS d'une tontine rotative."
+              + " Aucun effet en base.\n\n"
+              + "Renvoie le jackpot prévu, le collecté, le manquant, les retardataires et, pour"
+              + " chaque option de remise (`ATTENDRE`, `DISPONIBLE`, `AVANCE_COMMISSION`,"
+              + " `AVANCE_GESTIONNAIRE`, `CAISSE`), si elle est possible et ce qu'elle donne :"
+              + " montant remis, commission perçue, avance du gestionnaire, reste à recevoir."
+              + " L'option choisie se passe ensuite à `PUT /{cycleId}/cloturer`.")
+  @ApiResponses({
+    @ApiResponse(
+        responseCode = "200",
+        description = "Aperçu calculé",
+        content = @Content(schema = @Schema(implementation = RemiseApercuResponse.class))),
+    @ApiResponse(responseCode = "400", description = "Tour pas EN_COURS ou tontine non rotative"),
+    @ApiResponse(responseCode = "403", description = "Accès interdit"),
+    @ApiResponse(responseCode = "404", description = "Tontine ou cycle introuvable"),
+  })
+  public ResponseEntity<CustomResponse> apercuRemise(
+      @PathVariable UUID tontineId, @PathVariable UUID cycleId, HttpServletRequest httpRequest)
+      throws CustomException {
+    String keycloakId = headerParser.extractKeycloakId(httpRequest);
+    return ResponseEntity.ok(
+        new CustomResponse(
+            SUCCESS,
+            OK,
+            ResponseMessageConstants.REMISE_APERCU_SUCCESS,
+            remiseService.apercu(keycloakId, tontineId, cycleId)));
+  }
+
   // ─── Clôture ─────────────────────────────────────────────────────────────
 
   @PutMapping("/{cycleId}/cloturer")
@@ -255,7 +293,11 @@ public class CycleController {
               + "3. Stockage de montantJackpot, montantCommission, montantNet\n"
               + "4. Cotisations **EN_ATTENTE** restantes → marquées **EN_RETARD**\n"
               + "5. En mode AUTOMATIQUE : le cycle suivant (EN_ATTENTE) passe **EN_COURS** et un"
-              + " SMS est envoyé au bénéficiaire suivant")
+              + " SMS est envoyé au bénéficiaire suivant\n\n"
+              + "**Option de remise (B33)** : corps facultatif `modeRemise`, sinon le réglage de"
+              + " la tontine. `ATTENDRE` avec un jackpot incomplet → 409"
+              + " `REMISE_JACKPOT_INCOMPLETE` ; `CAISSE`, ou `AVANCE_COMMISSION` quand la"
+              + " commission ne couvre pas le manque → 400 `MODE_REMISE_INDISPONIBLE`.")
   @ApiResponses({
     @ApiResponse(
         responseCode = "200",
@@ -277,11 +319,12 @@ public class CycleController {
               example = "660e8400-e29b-41d4-a716-446655440000")
           @PathVariable
           UUID cycleId,
+      @RequestBody(required = false) @Valid CloturerCycleRequest request,
       HttpServletRequest httpRequest)
       throws CustomException {
 
     String keycloakId = headerParser.extractKeycloakId(httpRequest);
-    CycleResponse response = cycleService.closeCycle(keycloakId, tontineId, cycleId);
+    CycleResponse response = cycleService.closeCycle(keycloakId, tontineId, cycleId, request);
 
     return ResponseEntity.ok(
         new CustomResponse(SUCCESS, OK, ResponseMessageConstants.CYCLE_CLOSED, response));

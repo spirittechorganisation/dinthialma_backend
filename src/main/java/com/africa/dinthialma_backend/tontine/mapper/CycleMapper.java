@@ -27,6 +27,7 @@ public interface CycleMapper {
   @Mapping(target = "distributionParMembre", ignore = true)
   @Mapping(target = "montantJackpotPrevu", ignore = true)
   @Mapping(target = "tousPayes", ignore = true)
+  @Mapping(target = "resteARecevoir", ignore = true)
   @Mapping(target = "echeances", source = "echeances", qualifiedByName = "echeancesActives")
   @Mapping(target = "nombreEcheances", source = "echeances", qualifiedByName = "nombreEcheances")
   @Mapping(target = "echeanceEnCours", source = "echeances", qualifiedByName = "echeanceEnCours")

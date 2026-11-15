@@ -9,6 +9,7 @@ import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.dto.ChangerOrdreBeneficiaireRequest;
 import com.africa.dinthialma_backend.tontine.dto.CreateTontineRequest;
 import com.africa.dinthialma_backend.tontine.dto.ModifierEcheanceRequest;
+import com.africa.dinthialma_backend.tontine.dto.ModifierReglagesRequest;
 import com.africa.dinthialma_backend.tontine.dto.SimulationCalendrierRequest;
 import com.africa.dinthialma_backend.tontine.dto.SimulationCalendrierResponse;
 import com.africa.dinthialma_backend.tontine.dto.TontineResponse;
@@ -393,6 +394,24 @@ public class TontineController {
     return ResponseEntity.ok(
         new CustomResponse(
             SUCCESS, OK, ResponseMessageConstants.ORDRE_BENEFICIAIRE_UPDATED, response));
+  }
+
+  @PatchMapping("/{id}/reglages")
+  @Operation(
+      summary = "Modifier les réglages de remise (y compris en cours)",
+      description =
+          "🔒 Rôles : créateur de la tontine, SUPER_ADMIN. Tontine rotative non terminée. Champ"
+              + " absent = inchangé. `modeRemise` : option de remise du jackpot par défaut (B33),"
+              + " effective aux prochaines remises ; `CAISSE` → 400 `MODE_REMISE_INDISPONIBLE`.")
+  public ResponseEntity<CustomResponse> modifierReglages(
+      @PathVariable UUID id,
+      @RequestBody @Valid ModifierReglagesRequest request,
+      HttpServletRequest httpRequest)
+      throws CustomException {
+    String keycloakId = headerParser.extractKeycloakId(httpRequest);
+    TontineResponse response = tontineService.modifierReglages(keycloakId, id, request);
+    return ResponseEntity.ok(
+        new CustomResponse(SUCCESS, OK, ResponseMessageConstants.REGLAGES_UPDATED, response));
   }
 
   @PatchMapping("/{id}/echeance")

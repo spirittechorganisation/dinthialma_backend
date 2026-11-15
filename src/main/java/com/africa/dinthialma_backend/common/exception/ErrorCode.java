@@ -157,7 +157,11 @@ public enum ErrorCode {
    * Régularisation impossible (B33) : la distribution finale de la tontine événementielle est déjà
    * faite.
    */
-  REGULARISATION_IMPOSSIBLE;
+  REGULARISATION_IMPOSSIBLE,
+  /** Remise refusée en mode ATTENDRE : le jackpot prévu n'est pas réuni (B33). */
+  REMISE_JACKPOT_INCOMPLETE,
+  /** Option de remise inapplicable : CAISSE, ou avance que la commission ne couvre pas (B33). */
+  MODE_REMISE_INDISPONIBLE;
 
   /** Code générique correspondant à un statut HTTP (repli quand aucun code métier n'est fourni). */
   public static ErrorCode fromStatus(HttpStatusCode status) {

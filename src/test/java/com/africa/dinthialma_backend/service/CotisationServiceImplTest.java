@@ -56,6 +56,7 @@ import com.africa.dinthialma_backend.tontine.repository.DistributionEvenementiel
 import com.africa.dinthialma_backend.tontine.repository.EcheanceCycleRepository;
 import com.africa.dinthialma_backend.tontine.repository.TontineRepository;
 import com.africa.dinthialma_backend.tontine.service.interfaces.CycleService;
+import com.africa.dinthialma_backend.tontine.service.interfaces.RemiseService;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -96,6 +97,7 @@ class CotisationServiceImplTest {
   @Mock private WhatsappService whatsappService;
   @Mock private NotificationService notificationService;
   @Mock private CycleService cycleService;
+  @Mock private RemiseService remiseService;
   @Mock private DistributionEvenementielleRepository distributionRepository;
   @InjectMocks private CotisationServiceImpl service;
 
@@ -502,6 +504,8 @@ class CotisationServiceImplTest {
       assertThat(r.getStatut()).isEqualTo(CotisationStatut.VALIDE);
       verify(auditService)
           .log(gestionnaire, "cotisations", c.getId(), "statut", "EN_RETARD", "VALIDE");
+      // B33 lot 2 : le tour remis est recalculé (complément ou remboursement d'avance)
+      verify(remiseService).regulariser(cycle);
 
       Cotisation autre = existante(CotisationStatut.EN_RETARD);
       RefuseCotisationRequest motif = new RefuseCotisationRequest();

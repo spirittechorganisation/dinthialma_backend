@@ -2,6 +2,7 @@ package com.africa.dinthialma_backend.tontine.service.interfaces;
 
 import com.africa.dinthialma_backend.common.exception.CustomException;
 import com.africa.dinthialma_backend.tontine.dto.BeneficiaireHistoriqueResponse;
+import com.africa.dinthialma_backend.tontine.dto.CloturerCycleRequest;
 import com.africa.dinthialma_backend.tontine.dto.CycleResponse;
 import com.africa.dinthialma_backend.tontine.dto.OpenCycleRequest;
 import com.africa.dinthialma_backend.tontine.dto.PropositionTourResponse;
@@ -54,7 +55,19 @@ public interface CycleService {
    * <p>Calcule le montant jackpot, enregistre la date de remise et met le cycle suivant en {@code
    * EN_COURS} si applicable. Réservé au créateur et au SUPER_ADMIN.
    */
-  CycleResponse closeCycle(String keycloakId, UUID tontineId, UUID cycleId) throws CustomException;
+  default CycleResponse closeCycle(String keycloakId, UUID tontineId, UUID cycleId)
+      throws CustomException {
+    return closeCycle(keycloakId, tontineId, cycleId, null);
+  }
+
+  /**
+   * Clôture (remise du jackpot) avec une option de remise (B33). {@code request} null ou sans
+   * {@code modeRemise} : réglage de la tontine. {@code ATTENDRE} avec un jackpot incomplet → 409
+   * {@code REMISE_JACKPOT_INCOMPLETE} ; option inapplicable → {@code MODE_REMISE_INDISPONIBLE}.
+   */
+  CycleResponse closeCycle(
+      String keycloakId, UUID tontineId, UUID cycleId, CloturerCycleRequest request)
+      throws CustomException;
 
   /**
    * Remise du jackpot dès que tous ont payé (B32, {@code declenchementJackpot = TOUS_PAYES}),
