@@ -176,7 +176,8 @@ public class MeController {
               + " non-gagnants, le tour estimé et sa date de fin prévue (null si ce tour n'est pas"
               + " encore planifié). En `TIRAGE` ou `CHOIX` : pas d'estimation de tour ni de"
               + " date.\n\n"
-              + "`montantEstime` = montant × membres ACTIFS ÷ gagnants par tour, avant"
+              + "`montantEstime` = montant × membres ACTIFS × cotisations par tour (B32) ÷ gagnants"
+              + " par tour, avant"
               + " commissions.")
   @ApiResponses({
     @ApiResponse(

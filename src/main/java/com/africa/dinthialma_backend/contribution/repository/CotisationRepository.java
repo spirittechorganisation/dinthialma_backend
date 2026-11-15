@@ -84,6 +84,30 @@ public interface CotisationRepository
   boolean existsByEcheance_IdAndMembre_IdAndStatutNotAndDeletedAtIsNull(
       UUID echeanceId, UUID membreId, CotisationStatut statut);
 
+  /**
+   * Cotisations actives (hors REFUSE) d'un tour, réduites à {@code [echeanceId (UUID), membreId
+   * (UUID), statut (CotisationStatut)]} : suivi du tour par échéance (B32, lot 3).
+   */
+  @Query(
+      "SELECT c.echeance.id, c.membre.id, c.statut FROM Cotisation c"
+          + " WHERE c.cycle.id = :cycleId"
+          + "   AND c.deletedAt IS NULL"
+          + "   AND c.statut <> com.africa.dinthialma_backend.contribution.codeList.CotisationStatut.REFUSE")
+  List<Object[]> findEcheanceMembreStatutByCycle(@Param("cycleId") UUID cycleId);
+
+  /**
+   * Nombre de cotisations VALIDÉES par membership et par tour, pour un ensemble de memberships.
+   * Chaque ligne : {@code [membreId (UUID), cycleId (UUID), nombre (Long)]} (une cotisation active
+   * au plus par membre et par échéance : le nombre est un nombre d'échéances payées).
+   */
+  @Query(
+      "SELECT c.membre.id, c.cycle.id, COUNT(c) FROM Cotisation c"
+          + " WHERE c.membre.id IN :membreIds"
+          + "   AND c.statut = com.africa.dinthialma_backend.contribution.codeList.CotisationStatut.VALIDE"
+          + "   AND c.deletedAt IS NULL"
+          + " GROUP BY c.membre.id, c.cycle.id")
+  List<Object[]> countValideByMembreAndCycle(@Param("membreIds") List<UUID> membreIds);
+
   /** Cotisations d'une échéance (rappels et cotisations manquantes, B32). */
   List<Cotisation> findByEcheance_IdAndDeletedAtIsNull(UUID echeanceId);
 

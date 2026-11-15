@@ -5,6 +5,7 @@ import com.africa.dinthialma_backend.tontine.codeList.RoleFiltreTontine;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.dto.ChangerOrdreBeneficiaireRequest;
 import com.africa.dinthialma_backend.tontine.dto.CreateTontineRequest;
+import com.africa.dinthialma_backend.tontine.dto.ModifierReglagesRequest;
 import com.africa.dinthialma_backend.tontine.dto.TontineResponse;
 import com.africa.dinthialma_backend.tontine.dto.UpdateTontineRequest;
 import java.util.UUID;
@@ -86,4 +87,12 @@ public interface TontineService {
    */
   TontineResponse changerOrdreBeneficiaire(
       String keycloakId, UUID id, ChangerOrdreBeneficiaireRequest request) throws CustomException;
+
+  /**
+   * Modifie les réglages changeables à tout moment (B33) : option de remise par défaut, effective
+   * aux prochaines remises. Tontine rotative non terminée ; {@code CAISSE} → {@code
+   * MODE_REMISE_INDISPONIBLE}. Créateur ou SUPER_ADMIN.
+   */
+  TontineResponse modifierReglages(String keycloakId, UUID id, ModifierReglagesRequest request)
+      throws CustomException;
 }

@@ -6,6 +6,7 @@ import com.africa.dinthialma_backend.member.entity.TontineMembre;
 import com.africa.dinthialma_backend.tontine.calendrier.Rythme;
 import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
+import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import com.africa.dinthialma_backend.tontine.codeList.UniteRythme;
@@ -169,6 +170,16 @@ public class Tontine extends BaseEntity {
   @Enumerated(EnumType.STRING)
   @Column(name = "declenchement_jackpot", nullable = false, length = 20)
   private DeclenchementJackpot declenchementJackpot;
+
+  /** Option de remise du jackpot par défaut (B33), modifiable à chaque remise. */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "mode_remise", nullable = false, length = 30)
+  private ModeRemise modeRemise;
+
+  /** Option de remise par défaut ; DISPONIBLE (fonctionnement historique) si non renseignée. */
+  public ModeRemise getModeRemiseEffectif() {
+    return modeRemise != null ? modeRemise : ModeRemise.DISPONIBLE;
+  }
 
   /** Cotisations par tour, au moins 1 (objet non encore enregistré : 1). */
   public int getCotisationsParTourEffectif() {

@@ -98,9 +98,9 @@ public enum ErrorCode {
   AMOUNT_BELOW_MINIMUM,
   /** Montant différent du montant fixe imposé. */
   AMOUNT_MISMATCH,
-  /** Cotisation non modifiable (tour clôturé ou cotisation en retard). */
+  /** Cotisation non modifiable (refusée, ou validée sur un tour clôturé). */
   COTISATION_NOT_EDITABLE,
-  /** Action réservée à une cotisation EN_ATTENTE (validation, refus). */
+  /** Action réservée à une cotisation EN_ATTENTE, ou EN_RETARD depuis B33 (validation, refus). */
   COTISATION_NOT_PENDING,
 
   // ─── Listes de valeurs ──────────────────────────────────────────────────
@@ -152,7 +152,16 @@ public enum ErrorCode {
   /** Échéance inconnue (ou d'un autre tour / d'une autre tontine). */
   ECHEANCE_INTROUVABLE,
   /** Échéance pas encore ouverte : on ne paie pas d'avance. */
-  ECHEANCE_NON_OUVERTE;
+  ECHEANCE_NON_OUVERTE,
+  /**
+   * Régularisation impossible (B33) : la distribution finale de la tontine événementielle est déjà
+   * faite.
+   */
+  REGULARISATION_IMPOSSIBLE,
+  /** Remise refusée en mode ATTENDRE : le jackpot prévu n'est pas réuni (B33). */
+  REMISE_JACKPOT_INCOMPLETE,
+  /** Option de remise inapplicable : CAISSE, ou avance que la commission ne couvre pas (B33). */
+  MODE_REMISE_INDISPONIBLE;
 
   /** Code générique correspondant à un statut HTTP (repli quand aucun code métier n'est fourni). */
   public static ErrorCode fromStatus(HttpStatusCode status) {
