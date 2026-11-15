@@ -58,6 +58,8 @@ public final class ResponseMessageConstants {
   public static final String TONTINE_LIST_SUCCESS = "Liste des tontines récupérée avec succès";
   public static final String TONTINE_SIMULATION_SUCCESS = "Calendrier simulé avec succès";
   public static final String ECHEANCE_UPDATED = "Échéance et rappels mis à jour";
+  public static final String REGLAGES_UPDATED = "Réglages de la tontine mis à jour";
+  public static final String REMISE_APERCU_SUCCESS = "Aperçu de la remise calculé";
   public static final String ECHEANCE_NOT_FOUND = "Échéance introuvable sur ce tour";
   public static final String CYCLE_PROPOSITION_SUCCESS = "Tour proposé selon le rythme";
   public static final String TONTINE_NOT_FOUND = "Tontine introuvable";

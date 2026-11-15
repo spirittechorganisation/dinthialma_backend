@@ -38,6 +38,7 @@ import com.africa.dinthialma_backend.tontine.codeList.CommissionType;
 import com.africa.dinthialma_backend.tontine.codeList.CycleStatut;
 import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
+import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.MonRoleTontine;
 import com.africa.dinthialma_backend.tontine.codeList.RoleFiltreTontine;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
@@ -46,6 +47,7 @@ import com.africa.dinthialma_backend.tontine.codeList.UniteRythme;
 import com.africa.dinthialma_backend.tontine.dto.ChangerOrdreBeneficiaireRequest;
 import com.africa.dinthialma_backend.tontine.dto.CreateCommissionRequest;
 import com.africa.dinthialma_backend.tontine.dto.CreateTontineRequest;
+import com.africa.dinthialma_backend.tontine.dto.ModifierReglagesRequest;
 import com.africa.dinthialma_backend.tontine.dto.RappelsEcheance;
 import com.africa.dinthialma_backend.tontine.dto.TontineResponse;
 import com.africa.dinthialma_backend.tontine.dto.UpdateTontineRequest;
@@ -992,6 +994,107 @@ class TontineServiceImplTest {
                   service.changerOrdreBeneficiaire(
                       etranger.getKeycloakId(), tontine.getId(), vers("HYBRIDE")))
           .isInstanceOf(ForbiddenException.class);
+    }
+  }
+
+  @Nested
+  @DisplayName("option de remise par défaut (B33)")
+  class ReglageModeRemise {
+
+    private ModifierReglagesRequest vers(ModeRemise mode) {
+      ModifierReglagesRequest r = new ModifierReglagesRequest();
+      r.setModeRemise(mode);
+      return r;
+    }
+
+    @Test
+    @DisplayName("création : DISPONIBLE par défaut, ou l'option demandée ; CAISSE refusée")
+    void creation() throws Exception {
+      assertThat(service.createTontine(gestionnaire.getKeycloakId(), rotative()).getModeRemise())
+          .isEqualTo(ModeRemise.DISPONIBLE);
+
+      CreateTontineRequest attendre = rotative();
+      attendre.setModeRemise(ModeRemise.ATTENDRE);
+      assertThat(service.createTontine(gestionnaire.getKeycloakId(), attendre).getModeRemise())
+          .isEqualTo(ModeRemise.ATTENDRE);
+
+      CreateTontineRequest caisse = rotative();
+      caisse.setModeRemise(ModeRemise.CAISSE);
+      assertThatThrownBy(() -> service.createTontine(gestionnaire.getKeycloakId(), caisse))
+          .satisfies(
+              e ->
+                  assertThat(((CustomException) e).getCode())
+                      .isEqualTo(ErrorCode.MODE_REMISE_INDISPONIBLE));
+    }
+
+    @Test
+    @DisplayName("en cours de tontine : modifiable, audité ; champ absent = inchangé")
+    void enCours() throws Exception {
+      tontine.setStatut(TontineStatut.ACTIVE);
+
+      TontineResponse r =
+          service.modifierReglages(
+              gestionnaire.getKeycloakId(), tontine.getId(), vers(ModeRemise.AVANCE_COMMISSION));
+
+      assertThat(r.getModeRemise()).isEqualTo(ModeRemise.AVANCE_COMMISSION);
+      verify(auditService)
+          .log(
+              gestionnaire,
+              "tontines",
+              tontine.getId(),
+              "modeRemise",
+              "DISPONIBLE",
+              "AVANCE_COMMISSION");
+
+      assertThat(
+              service
+                  .modifierReglages(
+                      gestionnaire.getKeycloakId(), tontine.getId(), new ModifierReglagesRequest())
+                  .getModeRemise())
+          .isEqualTo(ModeRemise.AVANCE_COMMISSION);
+    }
+
+    @Test
+    @DisplayName("refus : CAISSE, tontine terminée ou événementielle")
+    void refus() {
+      tontine.setStatut(TontineStatut.ACTIVE);
+      assertThatThrownBy(
+              () ->
+                  service.modifierReglages(
+                      gestionnaire.getKeycloakId(), tontine.getId(), vers(ModeRemise.CAISSE)))
+          .satisfies(
+              e ->
+                  assertThat(((CustomException) e).getCode())
+                      .isEqualTo(ErrorCode.MODE_REMISE_INDISPONIBLE));
+
+      tontine.setStatut(TontineStatut.TERMINEE);
+      assertThatThrownBy(
+              () ->
+                  service.modifierReglages(
+                      gestionnaire.getKeycloakId(), tontine.getId(), vers(ModeRemise.ATTENDRE)))
+          .isInstanceOf(BadRequestException.class);
+
+      tontine.setStatut(TontineStatut.ACTIVE);
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      assertThatThrownBy(
+              () ->
+                  service.modifierReglages(
+                      gestionnaire.getKeycloakId(), tontine.getId(), vers(ModeRemise.ATTENDRE)))
+          .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    @DisplayName("modification en BROUILLON par PUT : option de remise prise en compte")
+    void brouillon() throws Exception {
+      tontine.setStatut(TontineStatut.BROUILLON);
+      UpdateTontineRequest req = new UpdateTontineRequest();
+      req.setModeRemise(ModeRemise.ATTENDRE);
+
+      assertThat(
+              service
+                  .updateTontine(gestionnaire.getKeycloakId(), tontine.getId(), req)
+                  .getModeRemise())
+          .isEqualTo(ModeRemise.ATTENDRE);
     }
   }
 }

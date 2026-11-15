@@ -13,11 +13,13 @@ import com.africa.dinthialma_backend.common.util.Fuseau;
 import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
 import com.africa.dinthialma_backend.contribution.codeList.Ponctualite;
 import com.africa.dinthialma_backend.contribution.dto.CotisationResponse;
+import com.africa.dinthialma_backend.contribution.dto.EtatTour;
 import com.africa.dinthialma_backend.contribution.entity.Cotisation;
 import com.africa.dinthialma_backend.contribution.mapper.CotisationMapper;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
 import com.africa.dinthialma_backend.contribution.repository.CotisationSpecifications;
 import com.africa.dinthialma_backend.contribution.service.interfaces.CotisationService;
+import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
 import com.africa.dinthialma_backend.jackpot.service.interfaces.PrioriteJackpotService;
 import com.africa.dinthialma_backend.me.codeList.ModeActivite;
 import com.africa.dinthialma_backend.me.codeList.StatutCotisationDue;
@@ -45,6 +47,7 @@ import com.africa.dinthialma_backend.tontine.entity.Tontine;
 import com.africa.dinthialma_backend.tontine.repository.CycleGagnantRepository;
 import com.africa.dinthialma_backend.tontine.repository.CycleTontineRepository;
 import com.africa.dinthialma_backend.tontine.repository.DistributionEvenementielleRepository;
+import com.africa.dinthialma_backend.tontine.repository.EcheanceCycleRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -89,6 +92,8 @@ public class MeServiceImpl implements MeService {
   private final CotisationService cotisationService;
   private final ActiviteRepository activiteRepository;
   private final PrioriteJackpotService prioriteService;
+  private final SuiviTourService suiviTour;
+  private final EcheanceCycleRepository echeanceRepository;
 
   // ─── Résumé « Je cotise » ────────────────────────────────────────────────
 
@@ -150,8 +155,10 @@ public class MeServiceImpl implements MeService {
       Map<UUID, Map<CotisationStatut, Object[]>> statsParMembre,
       Map<UUID, Object[]> jackpotsParMembre,
       Map<UUID, Long> toursParTontine,
+      Map<UUID, Long> toursPayesParMembre,
       Map<UUID, CycleTontine> cycleEnCoursParTontine,
-      Map<UUID, List<Cotisation>> cotisationsEnCoursParMembre) {}
+      Map<UUID, List<Cotisation>> cotisationsEnCoursParMembre,
+      Map<UUID, List<Object[]>> aRegulariserParMembre) {}
 
   private AgregatsSummary chargerAgregats(List<TontineMembre> memberships) {
     List<UUID> membreIds = memberships.stream().map(TontineMembre::getId).toList();
@@ -179,8 +186,45 @@ public class MeServiceImpl implements MeService {
         statsParMembre,
         jackpotsParMembre(membreIds),
         toursParTontine,
+        suiviTour.toursPayes(membreIds, tontineIds),
         cycleEnCoursParTontine,
-        cotisationsEnCours(cycleEnCoursParTontine.values(), membreIds));
+        cotisationsEnCours(cycleEnCoursParTontine.values(), membreIds),
+        echeanceRepository.findARegulariserByMembreIds(membreIds).stream()
+            .collect(Collectors.groupingBy(ligne -> (UUID) ligne[2])));
+  }
+
+  /**
+   * Échéances de tours remis encore impayées (B33) : membership ACTIF, échéances postérieures à
+   * l'adhésion (un membre arrivé en cours ne doit pas les tours d'avant).
+   */
+  private static List<MeSummaryResponse.EcheanceARegulariser> aRegulariser(
+      TontineMembre m, List<Object[]> lignes) {
+    if (m.getStatut() != MembreStatut.ACTIF) {
+      return List.of();
+    }
+    BigDecimal montant = m.getTontine().getMontantAttenduParMembre();
+    return lignes.stream()
+        .filter(
+            ligne ->
+                m.getDateAdhesion() == null
+                    || !((EcheanceCycle) ligne[0])
+                        .getEcheanceAt()
+                        .toLocalDate()
+                        .isBefore(m.getDateAdhesion()))
+        .map(
+            ligne -> {
+              EcheanceCycle e = (EcheanceCycle) ligne[0];
+              CycleTontine c = (CycleTontine) ligne[1];
+              return MeSummaryResponse.EcheanceARegulariser.builder()
+                  .cycleId(c.getId())
+                  .numeroCycle(c.getNumeroCycle())
+                  .echeanceId(e.getId())
+                  .numeroEcheance(e.getNumero())
+                  .echeanceAt(Fuseau.versOffset(e.getEcheanceAt()))
+                  .montant(montant)
+                  .build();
+            })
+        .toList();
   }
 
   /** [membreId, montant, nombre] : jackpots ROTATIVE + distribution finale EVENEMENTIELLE. */
@@ -243,9 +287,11 @@ public class MeServiceImpl implements MeService {
         .totalEnAttente(montant(stats.get(CotisationStatut.EN_ATTENTE)))
         .totalJackpotsRecus(jackpots != null ? (BigDecimal) jackpots[1] : BigDecimal.ZERO)
         .nombreJackpotsRecus(jackpots != null ? (Long) jackpots[2] : 0L)
-        .toursPayes(nombre(stats.get(CotisationStatut.VALIDE)))
+        .toursPayes(agregats.toursPayesParMembre().getOrDefault(m.getId(), 0L))
         .toursTotal(agregats.toursParTontine().getOrDefault(t.getId(), 0L))
         .cycleEnCours(cycleEnCours(cycle))
+        .echeancesARegulariser(
+            aRegulariser(m, agregats.aRegulariserParMembre().getOrDefault(m.getId(), List.of())))
         .cotisationDue(
             buildCotisationDue(
                 t,
@@ -256,11 +302,15 @@ public class MeServiceImpl implements MeService {
         .build();
   }
 
-  private static MeSummaryResponse.CycleEnCours cycleEnCours(CycleTontine cycle) {
+  private MeSummaryResponse.CycleEnCours cycleEnCours(CycleTontine cycle) {
     if (cycle == null) {
       return null;
     }
+    EtatTour etat = suiviTour.etat(cycle);
     return MeSummaryResponse.CycleEnCours.builder()
+        .nombreEcheances(etat.nombreEcheances())
+        .montantJackpotPrevu(etat.montantJackpotPrevu())
+        .tousPayes(etat.tousPayes())
         .cycleId(cycle.getId())
         .numeroCycle(cycle.getNumeroCycle())
         .dateDebut(cycle.getDateDebut())
@@ -361,10 +411,6 @@ public class MeServiceImpl implements MeService {
     return row != null ? (BigDecimal) row[3] : BigDecimal.ZERO;
   }
 
-  private static long nombre(Object[] row) {
-    return row != null ? (Long) row[2] : 0L;
-  }
-
   // ─── File « À valider » ──────────────────────────────────────────────────
 
   @Override
@@ -462,11 +508,13 @@ public class MeServiceImpl implements MeService {
     List<TontineMembre> actifs =
         membreRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(t.getId(), MembreStatut.ACTIF);
     int gagnantsParTour = Math.max(1, t.getNombreGagnants());
+    // Tour complet (B32) : montant × membres ACTIFS × cotisations par tour ÷ gagnants
     BigDecimal montantEstime =
         t.getMontant() == null
             ? null
             : t.getMontant()
-                .multiply(BigDecimal.valueOf(actifs.size()))
+                .multiply(
+                    BigDecimal.valueOf((long) actifs.size() * t.getCotisationsParTourEffectif()))
                 .divide(BigDecimal.valueOf(gagnantsParTour), 0, RoundingMode.DOWN);
 
     MesJackpotsResponse.JackpotAVenir.JackpotAVenirBuilder ligne =

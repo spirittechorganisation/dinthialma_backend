@@ -76,10 +76,15 @@ public interface TontineMembreRepository
   /**
    * Pour chaque tontine (non supprimée) d'un créateur ayant un cycle EN_COURS : paramètres de
    * montant et nombre de membres ACTIFS. Chaque ligne : {@code [montantLibre (Boolean), montant
-   * (BigDecimal), montantMinimum (BigDecimal), membresActifs (Long)]}.
+   * (BigDecimal), montantMinimum (BigDecimal), membresActifs (Long), échéances du tour EN_COURS
+   * (Long, B32)]}.
    */
   @Query(
-      "SELECT t.montantLibre, t.montant, t.montantMinimum, COUNT(m) FROM TontineMembre m"
+      "SELECT t.montantLibre, t.montant, t.montantMinimum, COUNT(m),"
+          + " (SELECT COUNT(e) FROM EcheanceCycle e WHERE e.cycle.tontine = t"
+          + "   AND e.cycle.statut = com.africa.dinthialma_backend.tontine.codeList.CycleStatut.EN_COURS"
+          + "   AND e.cycle.deletedAt IS NULL AND e.deletedAt IS NULL)"
+          + " FROM TontineMembre m"
           + " JOIN m.tontine t"
           + " WHERE t.creePar.id = :userId"
           + "   AND t.deletedAt IS NULL"

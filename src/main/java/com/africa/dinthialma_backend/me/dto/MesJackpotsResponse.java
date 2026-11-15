@@ -112,7 +112,8 @@ public class MesJackpotsResponse {
 
     @Schema(
         description =
-            "Montant brut estimé par gagnant (montant × membres ACTIFS ÷ gagnants par tour),"
+            "Montant brut estimé par gagnant sur le tour complet (montant × membres ACTIFS ×"
+                + " cotisations par tour ÷ gagnants par tour, B32),"
                 + " avant commissions",
         example = "60000",
         nullable = true)

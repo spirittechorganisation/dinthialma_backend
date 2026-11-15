@@ -25,12 +25,14 @@ import com.africa.dinthialma_backend.tontine.calendrier.RythmeJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.CycleStatut;
 import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
+import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.OrdreBeneficiaire;
 import com.africa.dinthialma_backend.tontine.codeList.RoleFiltreTontine;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import com.africa.dinthialma_backend.tontine.dto.ChangerOrdreBeneficiaireRequest;
 import com.africa.dinthialma_backend.tontine.dto.CreateTontineRequest;
+import com.africa.dinthialma_backend.tontine.dto.ModifierReglagesRequest;
 import com.africa.dinthialma_backend.tontine.dto.RappelsEcheance;
 import com.africa.dinthialma_backend.tontine.dto.TontineResponse;
 import com.africa.dinthialma_backend.tontine.dto.UpdateTontineRequest;
@@ -130,6 +132,7 @@ public class TontineServiceImpl implements TontineService {
                     : rappels.getHeuresAvant())
             .cotisationsParTour(cotisationsParTour)
             .declenchementJackpot(declenchement(type, request.getDeclenchementJackpot()))
+            .modeRemise(modeRemise(request.getModeRemise()))
             .ordreBeneficiaire(
                 type == TontineType.EVENEMENTIELLE ? null : request.getOrdreBeneficiaire())
             .modeCycle(
@@ -284,6 +287,16 @@ public class TontineServiceImpl implements TontineService {
           declenchement(tontine.getTontineType(), request.getDeclenchementJackpot()),
           DeclenchementJackpot::name,
           tontine::setDeclenchementJackpot);
+    }
+    if (request.getModeRemise() != null) {
+      modifier(
+          caller,
+          tontine,
+          "modeRemise",
+          tontine.getModeRemiseEffectif(),
+          modeRemise(request.getModeRemise()),
+          ModeRemise::name,
+          tontine::setModeRemise);
     }
   }
 
@@ -445,6 +458,42 @@ public class TontineServiceImpl implements TontineService {
     notifierChangementOrdre(saved);
     log.info("Ordre des bénéficiaires modifié – tontineId={} {} → {}", id, ancien, nouvel);
     return toResponse(saved, caller);
+  }
+
+  // ─── Réglages modifiables à tout moment (B33) ────────────────────────────
+
+  @Override
+  public TontineResponse modifierReglages(
+      String keycloakId, UUID id, ModifierReglagesRequest request) throws CustomException {
+    User caller = findUserByKeycloakId(keycloakId);
+    Tontine tontine = findTontineById(id);
+    assertIsCreatorOrSuperAdmin(caller, tontine);
+    if (tontine.getTontineType() != TontineType.ROTATIVE
+        || tontine.getStatut() == TontineStatut.TERMINEE) {
+      throw new BadRequestException(
+          "Les réglages de remise concernent une tontine rotative non terminée");
+    }
+    if (request.getModeRemise() != null) {
+      modifier(
+          caller,
+          tontine,
+          "modeRemise",
+          tontine.getModeRemiseEffectif(),
+          modeRemise(request.getModeRemise()),
+          ModeRemise::name,
+          tontine::setModeRemise);
+    }
+    return toResponse(tontineRepository.save(tontine), caller);
+  }
+
+  /** Option de remise retenue : DISPONIBLE par défaut ; CAISSE pas encore disponible. */
+  private static ModeRemise modeRemise(ModeRemise demande) throws CustomException {
+    if (demande == ModeRemise.CAISSE) {
+      throw new BadRequestException(
+          "La remise sur la caisse commune n'est pas encore disponible",
+          ErrorCode.MODE_REMISE_INDISPONIBLE);
+    }
+    return demande != null ? demande : ModeRemise.DISPONIBLE;
   }
 
   private void verifierOrdreModifiable(Tontine tontine, String nouvel) throws CustomException {

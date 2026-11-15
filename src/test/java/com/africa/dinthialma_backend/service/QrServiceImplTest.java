@@ -11,7 +11,7 @@ import static org.mockito.Mockito.when;
 import com.africa.dinthialma_backend.auth.entity.User;
 import com.africa.dinthialma_backend.auth.repository.UserRepository;
 import com.africa.dinthialma_backend.common.exception.NotFoundException;
-import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
+import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
 import com.africa.dinthialma_backend.me.dto.MonQrResponse;
 import com.africa.dinthialma_backend.me.dto.QrResolutionResponse;
 import com.africa.dinthialma_backend.me.service.impl.QrServiceImpl;
@@ -41,8 +41,8 @@ class QrServiceImplTest {
   @Mock private UserRepository userRepository;
   @Mock private TontineMembreRepository membreRepository;
   @Mock private CycleTontineRepository cycleRepository;
-  @Mock private CotisationRepository cotisationRepository;
   @Mock private TontineRepository tontineRepository;
+  @Mock private SuiviTourService suiviTour;
   @InjectMocks private QrServiceImpl service;
 
   private User moi;
@@ -103,8 +103,7 @@ class QrServiceImplTest {
     when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
             maTontineSansTour.getId(), CycleStatut.EN_COURS))
         .thenReturn(Optional.empty());
-    when(cotisationRepository.existsActiveByCycleAndMembre(tour.getId(), m1.getId()))
-        .thenReturn(true);
+    when(suiviTour.aPayeEcheanceCourante(tour, m1.getId())).thenReturn(true);
 
     QrResolutionResponse r = service.resoudre(moi.getKeycloakId(), "m_abc");
 

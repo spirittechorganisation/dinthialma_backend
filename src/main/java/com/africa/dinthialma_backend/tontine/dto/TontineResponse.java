@@ -3,6 +3,7 @@ package com.africa.dinthialma_backend.tontine.dto;
 import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
+import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.MonRoleTontine;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
@@ -65,6 +66,9 @@ public class TontineResponse {
 
   @Schema(description = "Remise du jackpot possible (B32)", example = "FIN_DU_TOUR")
   private DeclenchementJackpot declenchementJackpot;
+
+  @Schema(description = "Option de remise du jackpot par défaut (B33)", example = "DISPONIBLE")
+  private ModeRemise modeRemise;
 
   @Schema(description = "Code de l'ordre des bénéficiaires (ROTATIVE uniquement)", example = "FIXE")
   private String ordreBeneficiaire;

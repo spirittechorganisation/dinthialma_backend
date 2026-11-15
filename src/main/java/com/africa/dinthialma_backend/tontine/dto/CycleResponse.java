@@ -1,6 +1,7 @@
 package com.africa.dinthialma_backend.tontine.dto;
 
 import com.africa.dinthialma_backend.tontine.codeList.CycleStatut;
+import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -47,6 +48,22 @@ public class CycleResponse {
   private EcheanceResponse echeanceEnCours;
 
   @Schema(
+      description =
+          "Jackpot brut prévu du tour (B32) = montant par membre × membres ACTIFS × échéances du"
+              + " tour, tous gagnants confondus (comparable à montantJackpot) ; null si montant"
+              + " libre sans plancher",
+      example = "200000",
+      nullable = true)
+  private BigDecimal montantJackpotPrevu;
+
+  @Schema(
+      description =
+          "Tour EN_COURS dont chaque membre ACTIF a une cotisation VALIDÉE sur chaque échéance"
+              + " (B32) : le jackpot peut être remis. Toujours false hors tour EN_COURS",
+      example = "false")
+  private boolean tousPayes;
+
+  @Schema(
       description = "Jackpot brut = somme des cotisations VALIDÉES (calculé à la clôture)",
       example = "500000")
   private BigDecimal montantJackpot;
@@ -58,6 +75,27 @@ public class CycleResponse {
       description = "Montant net total = jackpot brut - commissions (calculé à la clôture)",
       example = "490000")
   private BigDecimal montantNet;
+
+  @Schema(
+      description = "Option de remise retenue à la clôture (B33) ; null avant la remise",
+      nullable = true)
+  private ModeRemise modeRemise;
+
+  @Schema(
+      description =
+          "Complément encore dû aux bénéficiaires quand les retards seront payés (B33,"
+              + " information de suivi) ; null si le tour n'est pas remis ou l'a été avant B33",
+      example = "8000",
+      nullable = true)
+  private BigDecimal resteARecevoir;
+
+  @Schema(
+      description =
+          "Avance de poche du gestionnaire encore à rembourser par les régularisations (B33,"
+              + " information de suivi)",
+      example = "0",
+      nullable = true)
+  private BigDecimal montantAvance;
 
   @Schema(
       description = "Statut courant du cycle",

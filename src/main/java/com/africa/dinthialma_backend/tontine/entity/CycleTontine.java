@@ -2,6 +2,7 @@ package com.africa.dinthialma_backend.tontine.entity;
 
 import com.africa.dinthialma_backend.common.base.BaseEntity;
 import com.africa.dinthialma_backend.tontine.codeList.CycleStatut;
+import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -93,6 +94,23 @@ public class CycleTontine extends BaseEntity {
   /** Montant net remis au bénéficiaire (montantJackpot - montantCommission). */
   @Column(name = "montant_net", precision = 12, scale = 2)
   private BigDecimal montantNet;
+
+  /** Option de remise retenue à la clôture (B33) ; null avant V043 (= DISPONIBLE). */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "mode_remise", length = 30)
+  private ModeRemise modeRemise;
+
+  /** Jackpot brut prévu au moment de la remise (B33) ; null avant V043. */
+  @Column(name = "montant_prevu", precision = 12, scale = 2)
+  private BigDecimal montantPrevu;
+
+  /** Net que les bénéficiaires recevront une fois tout payé (B33) ; null avant V043. */
+  @Column(name = "montant_net_prevu", precision = 12, scale = 2)
+  private BigDecimal montantNetPrevu;
+
+  /** Avance de poche du gestionnaire encore à rembourser par les régularisations (B33). */
+  @Column(name = "montant_avance", precision = 12, scale = 2)
+  private BigDecimal montantAvance;
 
   /** Statut courant du cycle. */
   @Enumerated(EnumType.STRING)

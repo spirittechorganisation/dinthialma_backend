@@ -7,6 +7,7 @@ import com.africa.dinthialma_backend.auth.repository.UserRoleAssignmentRepositor
 import com.africa.dinthialma_backend.common.audit.AuditService;
 import com.africa.dinthialma_backend.common.constants.ResponseMessageConstants;
 import com.africa.dinthialma_backend.common.exception.BadRequestException;
+import com.africa.dinthialma_backend.common.exception.ConflictException;
 import com.africa.dinthialma_backend.common.exception.CustomException;
 import com.africa.dinthialma_backend.common.exception.ErrorCode;
 import com.africa.dinthialma_backend.common.exception.ForbiddenException;
@@ -15,8 +16,10 @@ import com.africa.dinthialma_backend.common.util.Fuseau;
 import com.africa.dinthialma_backend.common.util.Montants;
 import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
 import com.africa.dinthialma_backend.contribution.codeList.Ponctualite;
+import com.africa.dinthialma_backend.contribution.dto.EtatTour;
 import com.africa.dinthialma_backend.contribution.entity.Cotisation;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
+import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
 import com.africa.dinthialma_backend.jackpot.service.interfaces.PrioriteJackpotService;
 import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import com.africa.dinthialma_backend.member.entity.TontineMembre;
@@ -28,11 +31,14 @@ import com.africa.dinthialma_backend.notification.service.WhatsappService;
 import com.africa.dinthialma_backend.notification.service.interfaces.NotificationService;
 import com.africa.dinthialma_backend.tontine.calendrier.CalendrierTours;
 import com.africa.dinthialma_backend.tontine.codeList.CycleStatut;
+import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
+import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.OrdreBeneficiaire;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import com.africa.dinthialma_backend.tontine.dto.BeneficiaireHistoriqueResponse;
+import com.africa.dinthialma_backend.tontine.dto.CloturerCycleRequest;
 import com.africa.dinthialma_backend.tontine.dto.CycleResponse;
 import com.africa.dinthialma_backend.tontine.dto.CycleResponse.MembreDistributionInfo;
 import com.africa.dinthialma_backend.tontine.dto.OpenCycleRequest;
@@ -44,6 +50,7 @@ import com.africa.dinthialma_backend.tontine.entity.DistributionEvenementielle;
 import com.africa.dinthialma_backend.tontine.entity.Tontine;
 import com.africa.dinthialma_backend.tontine.entity.TontineCommission;
 import com.africa.dinthialma_backend.tontine.mapper.CycleMapper;
+import com.africa.dinthialma_backend.tontine.remise.CalculRemise;
 import com.africa.dinthialma_backend.tontine.repository.CycleGagnantRepository;
 import com.africa.dinthialma_backend.tontine.repository.CycleTontineRepository;
 import com.africa.dinthialma_backend.tontine.repository.DistributionEvenementielleRepository;
@@ -92,6 +99,7 @@ public class CycleServiceImpl implements CycleService {
   private final NotificationService notificationService;
   private final DistributionEvenementielleRepository distributionRepository;
   private final PrioriteJackpotService prioriteService;
+  private final SuiviTourService suiviTour;
 
   // ─── Lecture ─────────────────────────────────────────────────────────────
 
@@ -105,7 +113,7 @@ public class CycleServiceImpl implements CycleService {
 
     return cycleRepository
         .findByTontine_IdAndDeletedAtIsNull(tontineId, pageable)
-        .map(cycleMapper::toResponse);
+        .map(this::reponse);
   }
 
   @Override
@@ -130,7 +138,7 @@ public class CycleServiceImpl implements CycleService {
     assertCanAccess(caller, tontine);
 
     CycleTontine cycle = findCycleById(tontineId, cycleId);
-    return cycleMapper.toResponse(cycle);
+    return reponse(cycle);
   }
 
   // ─── Ouverture manuelle ──────────────────────────────────────────────────
@@ -236,13 +244,14 @@ public class CycleServiceImpl implements CycleService {
                     tontineId,
                     NotificationLiens.cycle(saved.getId(), m.getId())));
 
-    return cycleMapper.toResponse(saved);
+    return reponse(saved);
   }
 
   // ─── Clôture ─────────────────────────────────────────────────────────────
 
   @Override
-  public CycleResponse closeCycle(String keycloakId, UUID tontineId, UUID cycleId)
+  public CycleResponse closeCycle(
+      String keycloakId, UUID tontineId, UUID cycleId, CloturerCycleRequest request)
       throws CustomException {
 
     User caller = findUserByKeycloakId(keycloakId);
@@ -259,13 +268,56 @@ public class CycleServiceImpl implements CycleService {
       return closeCycleEvenementielle(caller, tontine, tontineId, cycle);
     }
 
-    return closeCycleRotative(caller, tontine, tontineId, cycle);
+    ModeRemise mode =
+        request != null && request.getModeRemise() != null
+            ? request.getModeRemise()
+            : tontine.getModeRemiseEffectif();
+    return closeCycleRotative(caller, tontine, tontineId, cycle, mode);
+  }
+
+  // ─── Remise TOUS_PAYES (B32) ─────────────────────────────────────────────
+
+  @Override
+  public Optional<CycleResponse> remettreSiTousPayes(
+      String keycloakId, UUID tontineId, UUID cycleId) throws CustomException {
+    Tontine tontine = findTontineById(tontineId);
+    if (tontine.getTontineType() != TontineType.ROTATIVE
+        || tontine.getDeclenchementJackpot() != DeclenchementJackpot.TOUS_PAYES
+        || tontine.getStatut() != TontineStatut.ACTIVE) {
+      return Optional.empty();
+    }
+    CycleTontine cycle = findCycleById(tontineId, cycleId);
+    if (cycle.getStatut() != CycleStatut.EN_COURS || !suiviTour.etat(cycle).tousPayes()) {
+      return Optional.empty();
+    }
+    if (tontine.getModeCycle() == ModeCycle.AUTOMATIQUE) {
+      log.info(
+          "Remise automatique (TOUS_PAYES) – tontineId={} cycleId={} num={}",
+          tontineId,
+          cycleId,
+          cycle.getNumeroCycle());
+      return Optional.of(closeCycle(keycloakId, tontineId, cycleId));
+    }
+    // Mode MANUEL : le gestionnaire garde la main sur la remise, il est seulement prévenu
+    notificationService.notify(
+        tontine.getCreePar().getId(),
+        NotificationType.JACKPOT_PRET,
+        "Jackpot prêt à être remis",
+        "Tous les membres ont payé le tour #"
+            + cycle.getNumeroCycle()
+            + " · "
+            + tontine.getNom()
+            + ". Vous pouvez remettre le jackpot.",
+        tontineId,
+        NotificationLiens.cycle(cycleId, null));
+    return Optional.empty();
   }
 
   // ─── Clôture ROTATIVE ────────────────────────────────────────────────────
 
   private CycleResponse closeCycleRotative(
-      User caller, Tontine tontine, UUID tontineId, CycleTontine cycle) throws CustomException {
+      User caller, Tontine tontine, UUID tontineId, CycleTontine cycle, ModeRemise mode)
+      throws CustomException {
 
     UUID cycleId = cycle.getId();
 
@@ -279,21 +331,25 @@ public class CycleServiceImpl implements CycleService {
     List<TontineCommission> commissions =
         commissionRepository.findByTontine_IdAndDeletedAtIsNull(tontineId);
 
-    BigDecimal totalCommission = BigDecimal.ZERO;
-    for (TontineCommission commission : commissions) {
-      BigDecimal part =
-          switch (commission.getType()) {
-            case POURCENTAGE_JACKPOT -> Montants.pourcentage(jackpot, commission.getValeur());
-            case FRAIS_FIXES_PAR_CYCLE -> commission.getValeur();
-            case FRAIS_ADHESION -> BigDecimal.ZERO;
-          };
-      totalCommission = totalCommission.add(part);
+    // Option de remise (B33) : DISPONIBLE = ce qui est validé (fonctionnement historique)
+    BigDecimal prevu = suiviTour.etat(cycle).montantJackpotPrevu();
+    if (prevu == null) {
+      prevu = jackpot;
     }
+    CalculRemise.Resultat remise = CalculRemise.remise(mode, prevu, jackpot, commissions);
+    if (!remise.possible()) {
+      throw remiseRefusee(mode, prevu, jackpot);
+    }
+    BigDecimal totalCommission = remise.commission();
 
     cycle.setStatut(CycleStatut.TERMINE);
     cycle.setMontantJackpot(jackpot);
     cycle.setMontantCommission(totalCommission);
-    cycle.setMontantNet(jackpot.subtract(totalCommission));
+    cycle.setMontantNet(remise.montantNet());
+    cycle.setModeRemise(mode);
+    cycle.setMontantPrevu(prevu);
+    cycle.setMontantNetPrevu(remise.montantNet().add(remise.resteARecevoir()));
+    cycle.setMontantAvance(remise.avanceGestionnaire());
     cycle.setDateRemise(LocalDate.now());
 
     cycleRepository.save(cycle);
@@ -373,8 +429,8 @@ public class CycleServiceImpl implements CycleService {
         cycleId,
         jackpot,
         totalCommission,
-        jackpot.subtract(totalCommission));
-    return cycleMapper.toResponse(cycle);
+        remise.montantNet());
+    return reponse(cycle);
   }
 
   // ─── Clôture EVENEMENTIELLE ──────────────────────────────────────────────
@@ -495,7 +551,7 @@ public class CycleServiceImpl implements CycleService {
           cycle.getNumeroCycle());
     }
 
-    return cycleMapper.toResponse(cycle, distribution);
+    return reponse(cycle).toBuilder().distributionParMembre(distribution).build();
   }
 
   /**
@@ -671,10 +727,45 @@ public class CycleServiceImpl implements CycleService {
       log.warn("Notif WA admin (jackpot manuel) non envoyée : {}", e.getMessage());
     }
 
-    return cycleMapper.toResponse(cycle);
+    return reponse(cycle);
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
+
+  /**
+   * Tour enrichi du suivi par échéance : jackpot prévu (celui retenu à la remise pour un tour remis
+   * depuis B33), « tous payés » (B32) et reste à recevoir des bénéficiaires (B33).
+   */
+  private CycleResponse reponse(CycleTontine cycle) {
+    EtatTour etat = suiviTour.etat(cycle);
+    BigDecimal reste =
+        cycle.getMontantNetPrevu() != null && cycle.getMontantNet() != null
+            ? cycle.getMontantNetPrevu().subtract(cycle.getMontantNet()).max(BigDecimal.ZERO)
+            : null;
+    return cycleMapper.toResponse(cycle).toBuilder()
+        .montantJackpotPrevu(
+            cycle.getMontantPrevu() != null ? cycle.getMontantPrevu() : etat.montantJackpotPrevu())
+        .tousPayes(etat.tousPayes())
+        .resteARecevoir(reste)
+        .build();
+  }
+
+  /** ATTENDRE avec un jackpot incomplet → 409 ; option inapplicable → 400. */
+  private static CustomException remiseRefusee(
+      ModeRemise mode, BigDecimal prevu, BigDecimal collecte) {
+    if (mode == ModeRemise.ATTENDRE) {
+      return new ConflictException(
+          "Le jackpot prévu n'est pas réuni : il manque "
+              + CalculRemise.manquant(prevu, collecte).toPlainString()
+              + " FCFA. Choisissez une autre option de remise ou attendez les retardataires",
+          ErrorCode.REMISE_JACKPOT_INCOMPLETE);
+    }
+    return new BadRequestException(
+        mode == ModeRemise.CAISSE
+            ? "La remise sur la caisse commune n'est pas encore disponible"
+            : "La commission du tour ne couvre pas le manque : choisissez AVANCE_GESTIONNAIRE",
+        ErrorCode.MODE_REMISE_INDISPONIBLE);
+  }
 
   /** Tontine ROTATIVE à désignation après clôture, cycle TERMINE et encore sans gagnant. */
   private CycleTontine cycleOuvertALaDesignation(Tontine tontine, UUID cycleId)

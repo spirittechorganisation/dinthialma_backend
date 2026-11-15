@@ -2,6 +2,7 @@ package com.africa.dinthialma_backend.tontine.dto;
 
 import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
+import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -118,6 +119,13 @@ public class CreateTontineRequest {
       description = "Remise possible : FIN_DU_TOUR (défaut) ou TOUS_PAYES",
       example = "FIN_DU_TOUR")
   private DeclenchementJackpot declenchementJackpot;
+
+  @Schema(
+      description =
+          "Option de remise du jackpot par défaut (B33) : ATTENDRE, DISPONIBLE (défaut),"
+              + " AVANCE_COMMISSION ou AVANCE_GESTIONNAIRE ; modifiable à chaque remise",
+      example = "DISPONIBLE")
+  private ModeRemise modeRemise;
 
   @Schema(
       description =
