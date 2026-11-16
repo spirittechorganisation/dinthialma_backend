@@ -10,6 +10,7 @@ import com.africa.dinthialma_backend.notification.codeList.NotificationType;
 import com.africa.dinthialma_backend.notification.dto.NotificationLiens;
 import com.africa.dinthialma_backend.notification.service.interfaces.NotificationService;
 import com.africa.dinthialma_backend.tontine.codeList.CycleStatut;
+import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import com.africa.dinthialma_backend.tontine.entity.CycleGagnant;
 import com.africa.dinthialma_backend.tontine.entity.CycleTontine;
@@ -70,6 +71,9 @@ public class SchedulerService {
 
     for (CycleTontine cycle : cyclesEnCours) {
       Tontine tontine = cycle.getTontine();
+      if (cloturee(cycle)) {
+        continue;
+      }
       if (tontine.getTontineType() == TontineType.EVENEMENTIELLE) {
         processEvenementielleReminders(cycle, tontine);
       } else {
@@ -222,6 +226,8 @@ public class SchedulerService {
     // Cycle bientôt clôturé (J-2) → notification in-app admin
     cycleRepository
         .findByStatutAndDateFinAndDeletedAtIsNull(CycleStatut.EN_COURS, dans2Jours)
+        .stream()
+        .filter(cycle -> !cloturee(cycle))
         .forEach(
             cycle -> {
               Tontine tontine = cycle.getTontine();
@@ -242,8 +248,13 @@ public class SchedulerService {
     cycleRepository
         .findByStatutAndDateFinAndDeletedAtIsNull(CycleStatut.EN_COURS, dans3Jours)
         .stream()
-        .filter(cycle -> designationAutomatique(cycle.getTontine()))
+        .filter(cycle -> !cloturee(cycle) && designationAutomatique(cycle.getTontine()))
         .forEach(this::notifierTourProche);
+  }
+
+  /** Tour laissé ouvert par une tontine clôturée (B33) : plus aucun rappel. */
+  private static boolean cloturee(CycleTontine cycle) {
+    return cycle.getTontine().getStatut() == TontineStatut.TERMINEE;
   }
 
   private static boolean designationAutomatique(Tontine tontine) {

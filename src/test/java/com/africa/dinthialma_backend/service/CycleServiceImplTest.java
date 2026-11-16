@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -56,6 +57,7 @@ import com.africa.dinthialma_backend.tontine.dto.SelectionnerBeneficiaireRequest
 import com.africa.dinthialma_backend.tontine.entity.CycleGagnant;
 import com.africa.dinthialma_backend.tontine.entity.CycleTontine;
 import com.africa.dinthialma_backend.tontine.entity.DistributionEvenementielle;
+import com.africa.dinthialma_backend.tontine.entity.EcheanceCycle;
 import com.africa.dinthialma_backend.tontine.entity.Tontine;
 import com.africa.dinthialma_backend.tontine.entity.TontineCommission;
 import com.africa.dinthialma_backend.tontine.mapper.CycleMapper;
@@ -1275,6 +1277,200 @@ class CycleServiceImplTest {
           service.closeCycle(kc, tontine.getId(), tour.getId(), new CloturerCycleRequest());
 
       assertThat(r.getModeRemise()).isEqualTo(ModeRemise.DISPONIBLE);
+    }
+  }
+
+  @Nested
+  @DisplayName("clôture de la tontine (B33, lot 4) : suggestion et distribution immédiate")
+  class ClotureTontine {
+
+    private void toursDeLaTontine(CycleTontine... tours) {
+      lenient()
+          .when(
+              cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(
+                  tontine.getId()))
+          .thenReturn(List.of(tours));
+    }
+
+    private void verifierSuggestion(int fois, String extrait) {
+      verify(notificationService, times(fois))
+          .notify(
+              eq(gestionnaire.getId()),
+              eq(NotificationType.TONTINE_PRETE_A_CLOTURER),
+              anyString(),
+              contains(extrait),
+              eq(tontine.getId()));
+    }
+
+    @Test
+    @DisplayName("mode MANUEL : le dernier membre reçoit son jackpot → clôture suggérée")
+    void dernierTourRemis() throws Exception {
+      List<TontineMembre> membres = membresActifs(2);
+      membres.get(0).setARecuJackpot(true);
+      CycleTontine tour = cycleConnu(2, CycleStatut.EN_COURS);
+      toursDeLaTontine(tour);
+
+      service.closeCycle(kc, tontine.getId(), tour.getId());
+
+      assertThat(membres.get(1).isARecuJackpot()).isTrue();
+      verifierSuggestion(1, "dernier tour");
+    }
+
+    @Test
+    @DisplayName("mode MANUEL : des membres attendent encore leur jackpot → pas de suggestion")
+    void tourAOuvrir() throws Exception {
+      membresActifs(3);
+      CycleTontine tour = cycleConnu(1, CycleStatut.EN_COURS);
+      toursDeLaTontine(tour);
+
+      service.closeCycle(kc, tontine.getId(), tour.getId());
+
+      verifierSuggestion(0, "");
+    }
+
+    @Test
+    @DisplayName("mode AUTOMATIQUE : un tour reste à venir → pas de suggestion")
+    void tourRestant() throws Exception {
+      tontine.setModeCycle(ModeCycle.AUTOMATIQUE);
+      membresActifs(2);
+      CycleTontine tour1 = cycleConnu(1, CycleStatut.EN_COURS);
+      CycleTontine tour2 = Fixtures.cycle(tontine, 2, CycleStatut.EN_ATTENTE);
+      toursDeLaTontine(tour1, tour2);
+
+      service.closeCycle(kc, tontine.getId(), tour1.getId());
+
+      assertThat(tour2.getStatut()).isEqualTo(CycleStatut.EN_COURS);
+      verifierSuggestion(0, "");
+    }
+
+    @Test
+    @DisplayName(
+        "mode AUTOMATIQUE, ordre HYBRIDE : suggestion seulement une fois les gagnants désignés")
+    void apresDesignation() throws Exception {
+      tontine.setModeCycle(ModeCycle.AUTOMATIQUE);
+      tontine.setOrdreBeneficiaire("HYBRIDE");
+      membresActifs(1);
+      CycleTontine tour = cycleConnu(1, CycleStatut.EN_COURS);
+      toursDeLaTontine(tour);
+      when(cycleRepository.existsTermineSansGagnant(tontine.getId())).thenReturn(true);
+
+      service.closeCycle(kc, tontine.getId(), tour.getId());
+      verifierSuggestion(0, "");
+
+      service.selectionnerBeneficiaire(
+          kc, tontine.getId(), tour.getId(), new SelectionnerBeneficiaireRequest());
+      verifierSuggestion(1, "dernier tour");
+    }
+
+    @Test
+    @DisplayName(
+        "mode AUTOMATIQUE : tous les tours remis et désignés, un membre arrivé après n'a rien"
+            + " reçu → clôture suggérée quand même")
+    void membreArriveApres() throws Exception {
+      tontine.setModeCycle(ModeCycle.AUTOMATIQUE);
+      List<TontineMembre> membres = membresActifs(3);
+      membres.get(0).setARecuJackpot(true);
+      CycleTontine tour = cycleConnu(2, CycleStatut.EN_COURS);
+      toursDeLaTontine(tour);
+
+      service.closeCycle(kc, tontine.getId(), tour.getId());
+
+      verifierSuggestion(1, "dernier tour");
+    }
+
+    @Test
+    @DisplayName(
+        "tontine déjà clôturée : le tour se remet encore, le suivant ne s'ouvre pas, aucune"
+            + " suggestion")
+    void remiseApresCloture() throws Exception {
+      tontine.setModeCycle(ModeCycle.AUTOMATIQUE);
+      tontine.setStatut(TontineStatut.TERMINEE);
+      membresActifs(2);
+      CycleTontine tour1 = cycleConnu(1, CycleStatut.EN_COURS);
+      CycleTontine tour2 = Fixtures.cycle(tontine, 2, CycleStatut.EN_ATTENTE);
+      toursDeLaTontine(tour1, tour2);
+
+      CycleResponse r = service.closeCycle(kc, tontine.getId(), tour1.getId());
+
+      assertThat(r.getStatut()).isEqualTo(CycleStatut.TERMINE);
+      assertThat(r.getGagnants()).hasSize(1);
+      assertThat(tour2.getStatut()).isEqualTo(CycleStatut.EN_ATTENTE);
+      verifierSuggestion(0, "");
+    }
+
+    @Test
+    @DisplayName("événementielle : distribution finale faite → clôture suggérée")
+    void evenementielleDistribuee() throws Exception {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      membresActifs(1);
+      CycleTontine dernier = cycleConnu(1, CycleStatut.EN_COURS);
+      toursDeLaTontine(dernier);
+
+      service.closeCycle(kc, tontine.getId(), dernier.getId());
+
+      verifierSuggestion(1, "distribution finale");
+    }
+
+    @Test
+    @DisplayName(
+        "distribution immédiate : sous-cycles à venir retirés, sous-cycle en cours clôturé avec"
+            + " la part de chaque membre, sans suggestion")
+    void distributionImmediate() {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      List<TontineMembre> membres = membresActifs(1);
+      CycleTontine passe = Fixtures.cycle(tontine, 1, CycleStatut.TERMINE);
+      CycleTontine enCours = Fixtures.cycle(tontine, 2, CycleStatut.EN_COURS);
+      CycleTontine aVenir = Fixtures.cycle(tontine, 3, CycleStatut.EN_ATTENTE);
+      EcheanceCycle echeance =
+          EcheanceCycle.builder()
+              .id(UUID.randomUUID())
+              .cycle(aVenir)
+              .numero(1)
+              .dateDebut(LocalDate.now().plusDays(31))
+              .echeanceAt(LocalDateTime.now().plusDays(60))
+              .build();
+      aVenir.getEcheances().add(echeance);
+      when(cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId()))
+          .thenReturn(List.of(passe, enCours, aVenir), List.of(passe, enCours));
+      when(cotisationRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+              tontine.getId(), CotisationStatut.VALIDE))
+          .thenReturn(
+              List.of(cotisation(membres.getFirst(), passe, CotisationStatut.VALIDE, "1000")));
+
+      service.distribuerMaintenant(gestionnaire, tontine);
+
+      assertThat(aVenir.getDeletedAt()).isNotNull();
+      assertThat(echeance.getDeletedAt()).isNotNull();
+      assertThat(aVenir.getStatut()).isEqualTo(CycleStatut.EN_ATTENTE);
+      assertThat(enCours.getStatut()).isEqualTo(CycleStatut.TERMINE);
+      assertThat(enCours.getMontantNet()).isEqualByComparingTo("1000");
+      verify(distributionRepository).saveAll(any());
+      verify(notificationService)
+          .notify(
+              eq(membres.getFirst().getUser().getId()),
+              eq(NotificationType.DISTRIBUTION_FINALE),
+              anyString(),
+              anyString(),
+              eq(tontine.getId()),
+              any());
+      verifierSuggestion(0, "");
+    }
+
+    @Test
+    @DisplayName("distribution immédiate sans effet : rotative, ou événementielle déjà distribuée")
+    void distributionImmediateSansEffet() {
+      service.distribuerMaintenant(gestionnaire, tontine);
+      verify(cycleRepository, never())
+          .findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(any());
+
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      CycleTontine termine = Fixtures.cycle(tontine, 1, CycleStatut.TERMINE);
+      toursDeLaTontine(termine);
+
+      service.distribuerMaintenant(gestionnaire, tontine);
+
+      verify(cycleRepository, never()).save(any());
+      verify(distributionRepository, never()).saveAll(any());
     }
   }
 }

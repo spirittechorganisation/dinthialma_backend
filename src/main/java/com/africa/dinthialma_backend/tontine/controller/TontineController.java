@@ -7,6 +7,8 @@ import com.africa.dinthialma_backend.common.util.RequestHeaderParser;
 import com.africa.dinthialma_backend.tontine.codeList.RoleFiltreTontine;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.dto.ChangerOrdreBeneficiaireRequest;
+import com.africa.dinthialma_backend.tontine.dto.ClotureEnSuspensResponse;
+import com.africa.dinthialma_backend.tontine.dto.CloturerTontineRequest;
 import com.africa.dinthialma_backend.tontine.dto.CreateTontineRequest;
 import com.africa.dinthialma_backend.tontine.dto.ModifierEcheanceRequest;
 import com.africa.dinthialma_backend.tontine.dto.ModifierReglagesRequest;
@@ -15,6 +17,7 @@ import com.africa.dinthialma_backend.tontine.dto.SimulationCalendrierResponse;
 import com.africa.dinthialma_backend.tontine.dto.TontineResponse;
 import com.africa.dinthialma_backend.tontine.dto.UpdateTontineRequest;
 import com.africa.dinthialma_backend.tontine.service.interfaces.CalendrierService;
+import com.africa.dinthialma_backend.tontine.service.interfaces.ClotureTontineService;
 import com.africa.dinthialma_backend.tontine.service.interfaces.EcheanceService;
 import com.africa.dinthialma_backend.tontine.service.interfaces.TontineService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -72,6 +75,7 @@ public class TontineController {
   private final TontineService tontineService;
   private final CalendrierService calendrierService;
   private final EcheanceService echeanceService;
+  private final ClotureTontineService clotureService;
   private final RequestHeaderParser headerParser;
 
   // ─── Création ────────────────────────────────────────────────────────────
@@ -373,6 +377,56 @@ public class TontineController {
 
     return ResponseEntity.ok(
         new CustomResponse(SUCCESS, OK, ResponseMessageConstants.TONTINE_SUSPENDED, response));
+  }
+
+  // ─── Clôture ─────────────────────────────────────────────────────────────
+
+  @PutMapping("/{id}/cloturer")
+  @Operation(
+      summary = "Clôturer une tontine",
+      description =
+          "🔒 Rôles : créateur de la tontine, SUPER_ADMIN.\n\n"
+              + "Passe la tontine **ACTIVE** ou **SUSPENDUE** à **TERMINEE** (irréversible).\n\n"
+              + "S'il reste des tours non remis, des gagnants à désigner, des retards, des"
+              + " compléments ou des paiements à valider : 409 `TONTINE_CLOTURE_A_CONFIRMER` avec"
+              + " le détail dans `data` ; renvoyer la demande avec `forcer: true` pour confirmer."
+              + "\n\n**Effets** : événementielle arrêtée avant son terme → distribution finale"
+              + " immédiate sur les cotisations validées (sous-cycles à venir retirés) ; demandes"
+              + " d'adhésion en attente refusées et priorités de jackpot actives annulées ;"
+              + " membres actifs notifiés (`TONTINE_CLOTUREE`).\n\n"
+              + "**Après la clôture** : un tour déjà commencé se remet encore et les retards"
+              + " s'encaissent toujours (suivi), mais plus aucun tour ne s'ouvre.")
+  @ApiResponses({
+    @ApiResponse(
+        responseCode = "200",
+        description = "Tontine clôturée",
+        content = @Content(schema = @Schema(implementation = TontineResponse.class))),
+    @ApiResponse(
+        responseCode = "400",
+        description = "`TONTINE_NON_CLOTURABLE` : tontine en BROUILLON ou déjà TERMINEE"),
+    @ApiResponse(responseCode = "401", description = "JWT manquant ou expiré"),
+    @ApiResponse(responseCode = "403", description = "Accès interdit"),
+    @ApiResponse(responseCode = "404", description = "Tontine introuvable"),
+    @ApiResponse(
+        responseCode = "409",
+        description = "`TONTINE_CLOTURE_A_CONFIRMER` : points en suspens dans `data`",
+        content = @Content(schema = @Schema(implementation = ClotureEnSuspensResponse.class))),
+  })
+  public ResponseEntity<CustomResponse> cloturerTontine(
+      @Parameter(
+              description = "UUID de la tontine",
+              example = "550e8400-e29b-41d4-a716-446655440000")
+          @PathVariable
+          UUID id,
+      @RequestBody(required = false) @Valid CloturerTontineRequest request,
+      HttpServletRequest httpRequest)
+      throws CustomException {
+
+    String keycloakId = headerParser.extractKeycloakId(httpRequest);
+    TontineResponse response = clotureService.cloturer(keycloakId, id, request);
+
+    return ResponseEntity.ok(
+        new CustomResponse(SUCCESS, OK, ResponseMessageConstants.TONTINE_CLOTUREE, response));
   }
 
   @PatchMapping("/{id}/ordre-beneficiaire")
