@@ -161,7 +161,16 @@ public enum ErrorCode {
   /** Remise refusée en mode ATTENDRE : le jackpot prévu n'est pas réuni (B33). */
   REMISE_JACKPOT_INCOMPLETE,
   /** Option de remise inapplicable : CAISSE, ou avance que la commission ne couvre pas (B33). */
-  MODE_REMISE_INDISPONIBLE;
+  MODE_REMISE_INDISPONIBLE,
+
+  // ─── Clôture de la tontine (B33) ───────────────────────────────────────
+  /**
+   * Clôture à confirmer : il reste des tours non remis, des retards ou des compléments, listés dans
+   * {@code data}. Renvoyer la demande avec {@code forcer: true}.
+   */
+  TONTINE_CLOTURE_A_CONFIRMER,
+  /** Tontine en BROUILLON ou déjà TERMINEE : elle ne se clôture pas. */
+  TONTINE_NON_CLOTURABLE;
 
   /** Code générique correspondant à un statut HTTP (repli quand aucun code métier n'est fourni). */
   public static ErrorCode fromStatus(HttpStatusCode status) {

@@ -92,5 +92,14 @@ public enum NotificationType {
    * Retard régularisé sur un tour déjà remis (B33) : un complément revient aux bénéficiaires
    * (destinataire : gestionnaire ; les bénéficiaires reçoivent {@code JACKPOT_DISTRIBUE}).
    */
-  COMPLEMENT_A_REMETTRE
+  COMPLEMENT_A_REMETTRE,
+
+  /**
+   * Dernier tour remis (ou distribution finale faite) : la tontine peut être clôturée (B33). L'app
+   * suggère, elle ne clôture pas (destinataire : gestionnaire).
+   */
+  TONTINE_PRETE_A_CLOTURER,
+
+  /** La tontine a été clôturée par son gestionnaire (B33) (destinataires : membres actifs). */
+  TONTINE_CLOTUREE
 }

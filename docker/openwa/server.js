@@ -91,7 +91,7 @@ app.get('/qr', async (req, res) => {
 <html>
 <head>
   <title>Dinthialma – Connexion WhatsApp</title>
-  <meta http-equiv="refresh" content="30">
+  <meta http-equiv="refresh" content="5">
   <style>
     body { font-family: sans-serif; display: flex; flex-direction: column;
            align-items: center; padding: 40px; background: #f5f5f5; }
@@ -105,7 +105,7 @@ app.get('/qr', async (req, res) => {
   <h2>📱 Scannez avec WhatsApp Business</h2>
   <img src="${qrImage}" alt="QR Code"/>
   <p>Ouvrez WhatsApp → Appareils liés → Lier un appareil</p>
-  <p style="font-size:12px">La page se rafraîchit toutes les 30 secondes</p>
+  <p style="font-size:12px">Le code change souvent : la page se rafraîchit toutes les 5 secondes</p>
 </body>
 </html>`);
 });

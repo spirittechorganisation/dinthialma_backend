@@ -2,6 +2,7 @@ package com.africa.dinthialma_backend.adhesion.repository;
 
 import com.africa.dinthialma_backend.adhesion.codeList.StatutDemande;
 import com.africa.dinthialma_backend.adhesion.entity.DemandeAdhesion;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -54,4 +55,8 @@ public interface DemandeAdhesionRepository extends JpaRepository<DemandeAdhesion
 
   /** Demandes d'un statut reçues sur une tontine. */
   long countByTontine_IdAndStatutAndDeletedAtIsNull(UUID tontineId, StatutDemande statut);
+
+  /** Demandes d'un statut reçues sur une tontine (fermeture d'office à la clôture, B33). */
+  List<DemandeAdhesion> findByTontine_IdAndStatutAndDeletedAtIsNull(
+      UUID tontineId, StatutDemande statut);
 }

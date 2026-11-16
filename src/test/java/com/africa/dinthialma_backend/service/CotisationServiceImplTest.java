@@ -190,7 +190,7 @@ class CotisationServiceImplTest {
     void succes() throws Exception {
       doThrow(new RuntimeException("WhatsApp KO"))
           .when(whatsappService)
-          .send(anyString(), anyString());
+          .sendCotisation(anyString(), anyString());
 
       CotisationResponse r =
           service.recordCotisation(awa.getKeycloakId(), tontine.getId(), declaration("1000"));
@@ -215,7 +215,7 @@ class CotisationServiceImplTest {
               anyString(),
               eq(tontine.getId()),
               any());
-      verify(whatsappService, times(2)).send(anyString(), anyString());
+      verify(whatsappService, times(2)).sendCotisation(anyString(), anyString());
       verify(auditService).logCreate(eq(awa), eq("cotisations"), any());
     }
 
@@ -319,8 +319,8 @@ class CotisationServiceImplTest {
               anyString(),
               eq(tontine.getId()),
               any());
-      verify(whatsappService).send(eq(awa.getPhone()), contains("Référence : OM-42"));
-      verify(whatsappService).send(eq(gestionnaire.getPhone()), anyString());
+      verify(whatsappService).sendCotisation(eq(awa.getPhone()), contains("Référence : OM-42"));
+      verify(whatsappService).sendCotisation(eq(gestionnaire.getPhone()), anyString());
       // B32 : la saisie directement VALIDE peut compléter le tour (TOUS_PAYES)
       verify(cycleService)
           .remettreSiTousPayes(eq(gestionnaire.getKeycloakId()), eq(tontine.getId()), any());
@@ -333,13 +333,13 @@ class CotisationServiceImplTest {
       awa.setAccountStatus(AccountStatus.PRE_ENROLLED);
       doThrow(new RuntimeException("KO"))
           .when(whatsappService)
-          .send(eq(gestionnaire.getPhone()), anyString());
+          .sendCotisation(eq(gestionnaire.getPhone()), anyString());
 
       service.adminRecordCotisation(
           gestionnaire.getKeycloakId(), tontine.getId(), saisie("1000", null));
 
       verify(notificationService, never()).notify(any(), any(), any(), any(), any(), any());
-      verify(whatsappService).send(eq(awa.getPhone()), contains("Inscrivez-vous"));
+      verify(whatsappService).sendCotisation(eq(awa.getPhone()), contains("Inscrivez-vous"));
     }
 
     @Test
@@ -370,7 +370,7 @@ class CotisationServiceImplTest {
       service.adminRecordCotisation(
           gestionnaire.getKeycloakId(), tontine.getId(), saisie("1000", " "));
       ArgumentCaptor<String> msg = ArgumentCaptor.forClass(String.class);
-      verify(whatsappService).send(eq(awa.getPhone()), msg.capture());
+      verify(whatsappService).sendCotisation(eq(awa.getPhone()), msg.capture());
       assertThat(msg.getValue()).doesNotContain("Référence");
     }
 
@@ -431,7 +431,7 @@ class CotisationServiceImplTest {
       c.setReferenceTransaction("REF-9");
       doThrow(new RuntimeException("KO"))
           .when(whatsappService)
-          .send(eq(gestionnaire.getPhone()), anyString());
+          .sendCotisation(eq(gestionnaire.getPhone()), anyString());
 
       CotisationResponse r =
           service.validateCotisation(gestionnaire.getKeycloakId(), tontine.getId(), c.getId());
@@ -449,7 +449,7 @@ class CotisationServiceImplTest {
               anyString(),
               eq(tontine.getId()),
               any());
-      verify(whatsappService).send(eq(awa.getPhone()), contains("Référence : REF-9"));
+      verify(whatsappService).sendCotisation(eq(awa.getPhone()), contains("Référence : REF-9"));
       // B32 : chaque validation vérifie si le jackpot peut être remis (TOUS_PAYES)
       verify(cycleService)
           .remettreSiTousPayes(gestionnaire.getKeycloakId(), tontine.getId(), c.getCycle().getId());
@@ -461,7 +461,7 @@ class CotisationServiceImplTest {
       Cotisation c = existante(CotisationStatut.EN_ATTENTE);
       service.validateCotisation(gestionnaire.getKeycloakId(), tontine.getId(), c.getId());
       ArgumentCaptor<String> msg = ArgumentCaptor.forClass(String.class);
-      verify(whatsappService).send(eq(awa.getPhone()), msg.capture());
+      verify(whatsappService).sendCotisation(eq(awa.getPhone()), msg.capture());
       assertThat(msg.getValue()).doesNotContain("Référence");
     }
 
@@ -471,7 +471,9 @@ class CotisationServiceImplTest {
       Cotisation c = existante(CotisationStatut.EN_ATTENTE);
       RefuseCotisationRequest req = new RefuseCotisationRequest();
       req.setMotif("  Référence introuvable ");
-      doThrow(new RuntimeException("KO")).when(whatsappService).send(anyString(), anyString());
+      doThrow(new RuntimeException("KO"))
+          .when(whatsappService)
+          .sendCotisation(anyString(), anyString());
 
       CotisationResponse r =
           service.refuseCotisation(gestionnaire.getKeycloakId(), tontine.getId(), c.getId(), req);
@@ -985,7 +987,8 @@ class CotisationServiceImplTest {
       assertThat(r.getEcheanceAt()).isNotNull();
       verify(cotisationRepository).existsActiveByEcheanceAndMembre(enCours.getId(), membre.getId());
       verify(cotisationRepository, never()).existsActiveByCycleAndMembre(any(), any());
-      verify(whatsappService, times(2)).send(anyString(), contains("tour 1, échéance 2/3"));
+      verify(whatsappService, times(2))
+          .sendCotisation(anyString(), contains("tour 1, échéance 2/3"));
     }
 
     @Test

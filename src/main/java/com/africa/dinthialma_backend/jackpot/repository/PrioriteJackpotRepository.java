@@ -47,6 +47,10 @@ public interface PrioriteJackpotRepository extends JpaRepository<PrioriteJackpot
   List<PrioriteJackpot> findByMembre_IdInAndStatutInAndDeletedAtIsNull(
       Collection<UUID> membreIds, Collection<StatutPriorite> statuts);
 
+  /** Priorités d'une tontine ayant l'un de ces statuts (annulation à la clôture, B33). */
+  List<PrioriteJackpot> findByTontine_IdAndStatutInAndDeletedAtIsNull(
+      UUID tontineId, Collection<StatutPriorite> statuts);
+
   /** Priorités d'un statut sur une tontine (tableau de bord gestionnaire). */
   long countByTontine_IdAndStatutAndDeletedAtIsNull(UUID tontineId, StatutPriorite statut);
 }
