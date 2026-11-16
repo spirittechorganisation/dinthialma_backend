@@ -811,6 +811,24 @@ cd docker && docker compose up -d
 | `BOOTSTRAP_ENABLED` | `true` | Créer SUPER_ADMIN au 1er démarrage |
 | `BOOTSTRAP_SUPER_ADMIN_PHONE` | `221783703310` | Sans le `+` |
 | `TOKEN_ENCRYPTION_KEY` | *(dev default)* | Clé AES-256 pour refresh tokens |
+| `OPENWA_CATEGORIES` | `OTP,INVITATION,JACKPOT` | Familles de messages WhatsApp réellement envoyées (voir ci-dessous) |
+
+### Familles de messages WhatsApp (`CategorieWhatsapp`)
+
+`WhatsappService` n'envoie que les familles listées dans `openwa.categories` (`OPENWA_CATEGORIES`) ; les
+autres sont ignorées sans erreur. Les notifications in-app ne sont jamais filtrées.
+
+| Famille | Messages | Par défaut |
+|---------|----------|------------|
+| `OTP` | inscription, mot de passe oublié, PIN oublié, changement de numéro | ✅ |
+| `INVITATION` | membre pré-inscrit ajouté à une tontine | ✅ |
+| `JACKPOT` | annonce des gagnants, désignation manuelle (gestionnaire), distribution finale (membres + gestionnaire) | ✅ |
+| `COTISATION` | déclaration, encaissement, validation, refus (membre et gestionnaire) | ❌ |
+| `RAPPEL` | rappel quotidien de 8h (rotative et événementielle), veille et N h avant l'échéance | ❌ |
+
+Tout réactiver : `OPENWA_CATEGORIES=OTP,INVITATION,JACKPOT,COTISATION,RAPPEL`. Tout nouveau message
+WhatsApp passe par une méthode de `WhatsappService` rattachée à une famille (`sendCotisation`,
+`sendRappelEcheance`…), jamais par `send(phone, message)` directement.
 
 ---
 

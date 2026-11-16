@@ -143,7 +143,7 @@ public class CotisationServiceImpl implements CotisationService {
 
     // Notif membre — confirmation de soumission
     try {
-      whatsappService.send(
+      whatsappService.sendCotisation(
           caller.getPhone(),
           "📝 *Dinthialma* – Votre cotisation de "
               + montantStr
@@ -185,7 +185,7 @@ public class CotisationServiceImpl implements CotisationService {
     try {
       String adminPhone = tontine.getCreePar().getPhone();
       String membreNom = caller.getFirstName() + " " + caller.getLastName();
-      whatsappService.send(
+      whatsappService.sendCotisation(
           adminPhone,
           "💰 *Dinthialma* – "
               + membreNom
@@ -309,14 +309,14 @@ public class CotisationServiceImpl implements CotisationService {
                       + numCycle
                       + ")"
                       + " a été enregistrée et validée.";
-      whatsappService.send(membrePhone, membreMsg);
+      whatsappService.sendCotisation(membrePhone, membreMsg);
     } catch (Exception e) {
       log.warn("Notif WA membre (admin-record) non envoyée : {}", e.getMessage());
     }
 
     // Notif admin — confirmation de l'enregistrement
     try {
-      whatsappService.send(
+      whatsappService.sendCotisation(
           tontine.getCreePar().getPhone(),
           "✅ *Dinthialma* – Vous avez enregistré la cotisation de "
               + montantStr
@@ -425,14 +425,14 @@ public class CotisationServiceImpl implements CotisationService {
                   + numCycle
                   + ")"
                   + " a été validée.";
-      whatsappService.send(memberPhone, msg);
+      whatsappService.sendCotisation(memberPhone, msg);
     } catch (Exception e) {
       log.warn("Notif WA membre (validation) non envoyée : {}", e.getMessage());
     }
 
     // Notif admin — confirmation de validation
     try {
-      whatsappService.send(
+      whatsappService.sendCotisation(
           saved.getTontine().getCreePar().getPhone(),
           "✅ *Dinthialma* – Vous avez validé la cotisation de "
               + montantStr
@@ -522,7 +522,7 @@ public class CotisationServiceImpl implements CotisationService {
 
     // WhatsApp membre (non bloquant ; un pré-inscrit n'a pas forcément l'application)
     try {
-      whatsappService.send(
+      whatsappService.sendCotisation(
           saved.getMembre().getUser().getPhone(),
           "❌ *Dinthialma* – Votre cotisation de "
               + montantStr
