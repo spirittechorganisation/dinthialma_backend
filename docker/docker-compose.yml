@@ -79,7 +79,7 @@ services:
   #   ⚠️  start-dev est réservé au développement uniquement
   # ─────────────────────────────────────────────────────────────────
   keycloak:
-    image: quay.io/keycloak/keycloak:26.1.5
+    image: quay.io/keycloak/keycloak:26.8.2-3
     container_name: dinthialma-keycloak
     restart: unless-stopped
     command: start-dev

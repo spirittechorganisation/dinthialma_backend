@@ -72,7 +72,7 @@ services:
   #       Ajouter Certbot + HTTPS quand un domaine sera configuré
   # ─────────────────────────────────────────────────────────────────
   keycloak:
-    image: quay.io/keycloak/keycloak:26.1.5
+    image: quay.io/keycloak/keycloak:26.8.2-3
     container_name: dinthialma-keycloak-prod
     restart: unless-stopped
     command: start-dev
