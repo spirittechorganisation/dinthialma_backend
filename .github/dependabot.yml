@@ -73,6 +73,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # appleboy/ssh-action : la règle de l'organisation n'autorise qu'un SHA précis
+      # (v1.2.0). Toute PR automatique échouerait au démarrage (startup_failure, #44).
+      # Montée manuelle : mettre à jour la règle de l'organisation, puis le SHA dans
+      # docker-publish.yml et ci-branches.yml (job « Sondes »).
+      - dependency-name: "appleboy/ssh-action"
 
   # ── Images de base (Dockerfile) ────────────────────────────────────────────
   - package-ecosystem: "docker"
@@ -112,6 +118,11 @@ updates:
       # PostgreSQL : une version majeure impose une migration des données
       - dependency-name: "postgres"
         update-types: ["version-update:semver-major"]
-      # Keycloak : aligné sur le client Java (org.keycloak:*)
+      # Keycloak : toutes les mises à jour sont ignorées ici. Le Keycloak de production
+      # tourne depuis le dépôt d'infra (/opt/infra) ; ces fichiers ne servent qu'au
+      # développement local et au VPS historique. Une montée de Keycloak migre sa base
+      # sans retour possible : elle se fait partout à la fois (infra, compose, client
+      # Java org.keycloak:*), dans une tâche dédiée, avec sauvegarde (cf. #43).
+      # Les deux noms couvrent l'image avec et sans le registre quay.io.
       - dependency-name: "quay.io/keycloak/keycloak"
-        update-types: ["version-update:semver-major"]
+      - dependency-name: "keycloak/keycloak"
