@@ -27,6 +27,7 @@ import com.africa.dinthialma_backend.notification.service.WhatsappService;
 import com.africa.dinthialma_backend.notification.service.interfaces.NotificationService;
 import com.africa.dinthialma_backend.support.Fixtures;
 import com.africa.dinthialma_backend.tontine.codeList.CycleStatut;
+import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import com.africa.dinthialma_backend.tontine.entity.CycleGagnant;
 import com.africa.dinthialma_backend.tontine.entity.CycleTontine;
@@ -189,6 +190,28 @@ class SchedulerServiceTest {
       scheduler.rappelCotisationsEnAttente();
       verifyNoInteractions(whatsappService, notificationService);
     }
+  }
+
+  @Test
+  @DisplayName(
+      "tontine clôturée (B33) : son tour resté ouvert ne déclenche plus aucun rappel ni annonce")
+  void tontineCloturee() {
+    tontine.setStatut(TontineStatut.TERMINEE);
+    CycleTontine reste = Fixtures.cycle(tontine, 1, CycleStatut.EN_COURS);
+    when(cycleRepository.findByStatutAndDeletedAtIsNull(CycleStatut.EN_COURS))
+        .thenReturn(List.of(reste));
+    when(cycleRepository.findByStatutAndDateFinAndDeletedAtIsNull(
+            CycleStatut.EN_COURS, LocalDate.now().plusDays(2)))
+        .thenReturn(List.of(reste));
+    when(cycleRepository.findByStatutAndDateFinAndDeletedAtIsNull(
+            CycleStatut.EN_COURS, LocalDate.now().plusDays(3)))
+        .thenReturn(List.of(reste));
+
+    scheduler.rappelCotisationsEnAttente();
+    scheduler.rappelsCyclesProches();
+
+    verifyNoInteractions(
+        whatsappService, notificationService, cotisationRepository, membreRepository);
   }
 
   @Test

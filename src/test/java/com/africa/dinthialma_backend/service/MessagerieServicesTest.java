@@ -3,6 +3,7 @@ package com.africa.dinthialma_backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
+import com.africa.dinthialma_backend.notification.codeList.CategorieWhatsapp;
 import com.africa.dinthialma_backend.notification.service.SmsService;
 import com.africa.dinthialma_backend.notification.service.WhatsappService;
 import com.sun.net.httpserver.HttpServer;
@@ -11,6 +12,7 @@ import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -117,6 +119,48 @@ class MessagerieServicesTest {
       assertThat(requetes.get(1)).contains("3 jours");
       assertThat(requetes.get(2)).contains("7 jours");
       assertThat(requetes.get(3)).contains("30 jours");
+    }
+
+    @Test
+    @DisplayName(
+        "familles limitées (OTP, INVITATION, JACKPOT) : rappels et suivi des cotisations ignorés")
+    void famillesLimitees() {
+      WhatsappService s = whatsapp(false, base);
+      ReflectionTestUtils.setField(
+          s,
+          "categories",
+          EnumSet.of(
+              CategorieWhatsapp.OTP, CategorieWhatsapp.INVITATION, CategorieWhatsapp.JACKPOT));
+
+      s.sendContributionReminder("1", "T", "1000 FCFA");
+      s.sendEvenementielleRappelAttente("1", "T", "Tabaski", 12, "700 FCFA");
+      s.sendEvenementielleRappelPeriode("1", "T", "Tabaski", 9, "2100 FCFA");
+      s.sendEvenementielleUrgent("1", "T", "Tabaski", 7, "0");
+      s.sendRappelEcheance("1", "Rappel");
+      s.sendCotisation("1", "Cotisation soumise");
+      assertThat(requetes).isEmpty();
+      assertThat(s.estActive(CategorieWhatsapp.RAPPEL)).isFalse();
+      assertThat(s.estActive(CategorieWhatsapp.COTISATION)).isFalse();
+
+      s.sendOtp("2", "123456");
+      s.sendTontineInvite("3", "Tontine B");
+      s.sendJackpotNotification("4", "Tontine C", "5000 FCFA");
+      s.sendDistributionFinale("5", "Tontine F", "9000", "10000");
+      s.sendDistributionFinaleAdmin("6", "Tontine G", "50000", 5);
+      s.sendJackpotManuelAdmin("7", "Awa Diop", 3, "Tontine H");
+      assertThat(requetes).hasSize(6);
+      assertThat(s.estActive(CategorieWhatsapp.OTP)).isTrue();
+    }
+
+    @Test
+    @DisplayName("toutes les familles actives : rappel d'échéance et suivi de cotisation envoyés")
+    void toutesFamilles() {
+      WhatsappService s = whatsapp(false, base);
+      s.sendRappelEcheance("1", "Rappel veille");
+      s.sendCotisation("2", "Cotisation validée");
+      assertThat(requetes).hasSize(2);
+      assertThat(requetes.get(0)).contains("Rappel veille");
+      assertThat(requetes.get(1)).contains("Cotisation validée");
     }
 
     @Test

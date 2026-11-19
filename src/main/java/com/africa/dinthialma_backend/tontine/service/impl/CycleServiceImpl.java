@@ -264,15 +264,82 @@ public class CycleServiceImpl implements CycleService {
       throw new BadRequestException("Seul un cycle EN_COURS peut être clôturé");
     }
 
+    CycleResponse reponse;
     if (tontine.getTontineType() == TontineType.EVENEMENTIELLE) {
-      return closeCycleEvenementielle(caller, tontine, tontineId, cycle);
+      reponse = closeCycleEvenementielle(caller, tontine, tontineId, cycle);
+    } else {
+      ModeRemise mode =
+          request != null && request.getModeRemise() != null
+              ? request.getModeRemise()
+              : tontine.getModeRemiseEffectif();
+      reponse = closeCycleRotative(caller, tontine, tontineId, cycle, mode);
     }
+    suggererCloture(tontine);
+    return reponse;
+  }
 
-    ModeRemise mode =
-        request != null && request.getModeRemise() != null
-            ? request.getModeRemise()
-            : tontine.getModeRemiseEffectif();
-    return closeCycleRotative(caller, tontine, tontineId, cycle, mode);
+  // ─── Clôture de la tontine (B33) ─────────────────────────────────────────
+
+  @Override
+  public void distribuerMaintenant(User caller, Tontine tontine) {
+    if (tontine.getTontineType() != TontineType.EVENEMENTIELLE) {
+      return;
+    }
+    UUID tontineId = tontine.getId();
+    List<CycleTontine> tours =
+        cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontineId);
+    LocalDateTime maintenant = LocalDateTime.now();
+    tours.stream()
+        .filter(tour -> tour.getStatut() == CycleStatut.EN_ATTENTE)
+        .forEach(
+            tour -> {
+              tour.setDeletedAt(maintenant);
+              tour.getEcheances().forEach(e -> e.setDeletedAt(maintenant));
+              cycleRepository.save(tour);
+            });
+    // Plus aucun sous-cycle à venir : la clôture du sous-cycle en cours fait la distribution finale
+    tours.stream()
+        .filter(tour -> tour.getStatut() == CycleStatut.EN_COURS)
+        .findFirst()
+        .ifPresent(enCours -> closeCycleEvenementielle(caller, tontine, tontineId, enCours));
+  }
+
+  /**
+   * Suggère la clôture de la tontine au gestionnaire quand plus rien ne reste à remettre. L'app ne
+   * clôture jamais d'elle-même.
+   */
+  private void suggererCloture(Tontine tontine) {
+    if (tontine.getStatut() == TontineStatut.TERMINEE || resteARemettre(tontine)) {
+      return;
+    }
+    notificationService.notify(
+        tontine.getCreePar().getId(),
+        NotificationType.TONTINE_PRETE_A_CLOTURER,
+        "Tontine prête à être clôturée",
+        (tontine.getTontineType() == TontineType.EVENEMENTIELLE
+                ? "La distribution finale de "
+                : "Le dernier tour de ")
+            + tontine.getNom()
+            + (tontine.getTontineType() == TontineType.EVENEMENTIELLE ? " est faite" : " est remis")
+            + " : vous pouvez clôturer la tontine.",
+        tontine.getId());
+  }
+
+  /**
+   * Vrai tant qu'un tour reste à remettre : tour en cours ou à venir ; en rotative, des membres
+   * attendent encore leur jackpot (tour à ouvrir en mode MANUEL, ou gagnants à désigner).
+   */
+  private boolean resteARemettre(Tontine tontine) {
+    UUID tontineId = tontine.getId();
+    boolean tourRestant =
+        cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontineId).stream()
+            .anyMatch(c -> c.getStatut() != CycleStatut.TERMINE);
+    if (tourRestant || tontine.getTontineType() != TontineType.ROTATIVE) {
+      return tourRestant;
+    }
+    return !eligibles(tontineId).isEmpty()
+        && (tontine.getModeCycle() == ModeCycle.MANUEL
+            || cycleRepository.existsTermineSansGagnant(tontineId));
   }
 
   // ─── Remise TOUS_PAYES (B32) ─────────────────────────────────────────────
@@ -419,7 +486,9 @@ public class CycleServiceImpl implements CycleService {
                   NotificationLiens.cotisation(c));
             });
 
-    if (tontine.getModeCycle() == ModeCycle.AUTOMATIQUE) {
+    // Tontine clôturée (B33) : le tour se remet encore, mais plus aucun tour ne s'ouvre
+    if (tontine.getModeCycle() == ModeCycle.AUTOMATIQUE
+        && tontine.getStatut() != TontineStatut.TERMINEE) {
       activateNextCycle(tontineId, cycle.getNumeroCycle() + 1);
     }
 
@@ -727,6 +796,7 @@ public class CycleServiceImpl implements CycleService {
       log.warn("Notif WA admin (jackpot manuel) non envoyée : {}", e.getMessage());
     }
 
+    suggererCloture(tontine);
     return reponse(cycle);
   }
 

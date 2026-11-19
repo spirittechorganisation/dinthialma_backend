@@ -97,6 +97,7 @@ services:
       # WhatsApp – OpenWA (interne)
       OPENWA_API_URL: http://openwa:3000
       OPENWA_MOCK: ${OPENWA_MOCK:-false}
+      OPENWA_CATEGORIES: ${OPENWA_CATEGORIES:-OTP,INVITATION,JACKPOT}
       # SMS – LAfricaMobile
       LAM_SMS_URL: ${LAM_SMS_URL}
       LAM_ACCOUNT_ID: ${LAM_ACCOUNT_ID}

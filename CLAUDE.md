@@ -83,6 +83,7 @@
 | `/{id}` | DELETE | ❌ | ❌ | ✅² | ✅ | 🔒 soft delete, BROUILLON seulement |
 | `/{id}/activer` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 BROUILLON/SUSPENDUE → ACTIVE |
 | `/{id}/suspendre` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 ACTIVE → SUSPENDUE |
+| `/{id}/cloturer` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 ACTIVE/SUSPENDUE → TERMINEE (B33), irréversible ; points en suspens (tours non remis, gagnants à désigner, retards, compléments, paiements à valider) → 409 `TONTINE_CLOTURE_A_CONFIRMER` avec le détail dans `data`, puis corps `forcer: true` ; BROUILLON ou déjà TERMINEE → 400 `TONTINE_NON_CLOTURABLE` ; membres actifs notifiés (`TONTINE_CLOTUREE`) |
 | `/{id}/ordre-beneficiaire` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 ROTATIVE BROUILLON/ACTIVE/SUSPENDUE ; effet à la prochaine clôture ; vers ROTATION/ALEATOIRE refusé si un tour attend ses gagnants (409 `DESIGNATION_EN_ATTENTE`) ; membres actifs notifiés (`ORDRE_BENEFICIAIRE_MODIFIE`) |
 | `/{id}/reglages` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 réglages modifiables à tout moment (B33), tontine ROTATIVE non TERMINEE : `modeRemise` (option de remise par défaut, effet aux prochaines remises ; `CAISSE` → 400 `MODE_REMISE_INDISPONIBLE`) ; audité |
 | `/{id}/echeance` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 jour / heure d'échéance et rappels (B26), tontine non TERMINEE ; tours pas encore commencés replanifiés, tour en cours inchangé ; membres actifs notifiés (`REGLES_MODIFIEES`) |
@@ -258,8 +259,9 @@ src/main/java/com/africa/dinthialma_backend/
 │   ├── repository/     TontineRepository, CycleTontineRepository,
 │   │                   TontineCommissionRepository
 │   └── service/
-│       ├── interfaces/ TontineService, CycleService, CommissionService
-│       └── impl/       TontineServiceImpl, CycleServiceImpl, CommissionServiceImpl
+│       ├── interfaces/ TontineService, CycleService, CommissionService, ClotureTontineService
+│       └── impl/       TontineServiceImpl, CycleServiceImpl, CommissionServiceImpl,
+│                       ClotureTontineServiceImpl
 ├── member/         ✅ Complet (entités + repo + service + controller)
 │   ├── codeList/       MembreStatut
 │   ├── controller/     MembreController
@@ -279,7 +281,7 @@ src/main/java/com/africa/dinthialma_backend/
 │       ├── interfaces/ CotisationService, SuiviTourService
 │       └── impl/       CotisationServiceImpl, SuiviTourServiceImpl
 ├── notification/   ✅ SMS (LAfricaMobile) + notifications in-app
-│   ├── codeList/       NotificationType (24 valeurs)
+│   ├── codeList/       NotificationType (26 valeurs)
 │   ├── controller/     NotificationController
 │   ├── dto/            NotificationResponse
 │   ├── entity/         UserNotification
@@ -623,6 +625,7 @@ Prochaine version disponible : **V044**
 | Supprimer tontine (BROUILLON) | ✅ | 🔒 créateur + SUPER_ADMIN |
 | Activer tontine | ✅ | 🔒 créateur + SUPER_ADMIN |
 | Suspendre tontine | ✅ | 🔒 créateur + SUPER_ADMIN |
+| Clôturer tontine (confirmation si points en suspens, suggestion au dernier tour remis) | ✅ | 🔒 créateur + SUPER_ADMIN |
 | Génération auto cycles (ROTATIVE AUTOMATIQUE) | ✅ | AUTO à l'activation |
 | Génération auto sous-cycles (EVENEMENTIELLE) | ✅ | AUTO à l'activation – dateDebut → dateEcheance selon le rythme |
 | Rythme libre + jour/heure d'échéance, simulation du calendrier (B26) | ✅ | 🔒 tout auth (création / simulation) |
@@ -728,7 +731,7 @@ Prochaine version disponible : **V044**
 | Marquer tout lu (bulk `@Modifying`) | ✅ | 🔒 tout auth |
 | `notify()` non-bloquant (try/catch interne, jamais de rollback) | ✅ | INFRA |
 
-#### Mapping événements → `NotificationType` (24 valeurs)
+#### Mapping événements → `NotificationType` (26 valeurs)
 
 | Événement | Type | Destinataire |
 |-----------|------|--------------|
@@ -757,6 +760,8 @@ Prochaine version disponible : **V044**
 | Tour clôturé en MANUEL / HYBRIDE avec des éligibles | `GAGNANTS_A_DESIGNER` | Gestionnaire |
 | Tous les membres ont payé le tour (`TOUS_PAYES`, mode MANUEL, B32) | `JACKPOT_PRET` | Gestionnaire |
 | Retard régularisé sur un tour remis, complément dû aux bénéficiaires (B33) | `COMPLEMENT_A_REMETTRE` | Gestionnaire (bénéficiaires : `JACKPOT_DISTRIBUE`) |
+| Dernier tour remis, ou distribution finale faite : la tontine peut être clôturée (B33) | `TONTINE_PRETE_A_CLOTURER` | Gestionnaire |
+| Tontine clôturée par son gestionnaire (B33) | `TONTINE_CLOTUREE` | Membres actifs (sauf celui qui clôture) |
 
 ---
 
@@ -806,6 +811,24 @@ cd docker && docker compose up -d
 | `BOOTSTRAP_ENABLED` | `true` | Créer SUPER_ADMIN au 1er démarrage |
 | `BOOTSTRAP_SUPER_ADMIN_PHONE` | `221783703310` | Sans le `+` |
 | `TOKEN_ENCRYPTION_KEY` | *(dev default)* | Clé AES-256 pour refresh tokens |
+| `OPENWA_CATEGORIES` | `OTP,INVITATION,JACKPOT` | Familles de messages WhatsApp réellement envoyées (voir ci-dessous) |
+
+### Familles de messages WhatsApp (`CategorieWhatsapp`)
+
+`WhatsappService` n'envoie que les familles listées dans `openwa.categories` (`OPENWA_CATEGORIES`) ; les
+autres sont ignorées sans erreur. Les notifications in-app ne sont jamais filtrées.
+
+| Famille | Messages | Par défaut |
+|---------|----------|------------|
+| `OTP` | inscription, mot de passe oublié, PIN oublié, changement de numéro | ✅ |
+| `INVITATION` | membre pré-inscrit ajouté à une tontine | ✅ |
+| `JACKPOT` | annonce des gagnants, désignation manuelle (gestionnaire), distribution finale (membres + gestionnaire) | ✅ |
+| `COTISATION` | déclaration, encaissement, validation, refus (membre et gestionnaire) | ❌ |
+| `RAPPEL` | rappel quotidien de 8h (rotative et événementielle), veille et N h avant l'échéance | ❌ |
+
+Tout réactiver : `OPENWA_CATEGORIES=OTP,INVITATION,JACKPOT,COTISATION,RAPPEL`. Tout nouveau message
+WhatsApp passe par une méthode de `WhatsappService` rattachée à une famille (`sendCotisation`,
+`sendRappelEcheance`…), jamais par `send(phone, message)` directement.
 
 ---
 
@@ -947,7 +970,7 @@ cd docker && docker compose up -d
   B33 Cotisation séparée de la remise
       lot 1 : régularisation (tour TERMINE payable, EN_RETARD validable, echeancesARegulariser)  ✅
       lot 2 : options de remise (modeRemise V043, aperçu, compléments, PATCH /reglages)    ✅
-      lot 4 : clôture de la tontine                                                        🔲
+      lot 4 : clôture de la tontine (PUT /cloturer, TONTINE_PRETE_A_CLOTURER)              ✅
       lot 3 : tours ouverts à leur date (ouvertureTours), remise automatique à l'échéance  🔲
 ```
 
@@ -1050,7 +1073,7 @@ l'ouverture manuelle et la simulation (`GET /v1/tontines/simulation`).
 ## Cotisation séparée de la remise (B33)
 
 Décisions du 2026-11-15 : **le comportement des tontines existantes ne change pas** sans choix du
-gestionnaire. Lots : 1 régularisation ✅ · 2 options de remise ✅ · 4 clôture de la tontine · 3 tours
+gestionnaire. Lots : 1 régularisation ✅ · 2 options de remise ✅ · 4 clôture de la tontine ✅ · 3 tours
 ouverts à leur date (réglage `ouvertureTours` : existantes `A_LA_REMISE`, nouvelles `A_LA_DATE` par
 défaut) et remise automatique à l'échéance (réglage, désactivé par défaut).
 
@@ -1078,6 +1101,26 @@ défaut) et remise automatique à l'échéance (réglage, désactivé par défau
   du tour est mis à jour (partagé à la désignation). Montants de suivi : Dinthialma ne détient aucun fonds.
 - `PATCH /v1/tontines/{id}/reglages` : `modeRemise` modifiable à tout moment (accord 2026-11-15), effet aux
   prochaines remises ; `remise automatique à l'échéance` et `ouvertureTours` s'y ajouteront au lot 3.
+- **Lot 4 — clôture de la tontine** (`ClotureTontineService`, `PUT /v1/tontines/{id}/cloturer`, décisions du
+  2026-11-16) : le gestionnaire clôture (ACTIVE ou SUSPENDUE → TERMINEE, irréversible) ; l'app ne clôture
+  jamais seule.
+  - **Suggestion** (`CycleServiceImpl.suggererCloture`, après chaque remise et chaque désignation) :
+    `TONTINE_PRETE_A_CLOTURER` au gestionnaire quand aucun tour n'est en cours ni à venir et, en rotative,
+    que plus personne n'attend un tour à ouvrir (mode MANUEL) ou une désignation ; événementielle : après la
+    distribution finale.
+  - **Points en suspens** → 409 `TONTINE_CLOTURE_A_CONFIRMER`, `data` = `ClotureEnSuspensResponse` :
+    `toursNonRemis` (EN_COURS, EN_ATTENTE), `toursSansGagnant`, `retards` (membre ACTIF sans cotisation
+    VALIDÉE : toutes les échéances d'un tour remis, les échéances échues d'un tour en cours ; pas celles
+    d'avant l'adhésion), `complements` (`resteARecevoir` ou `montantAvance` > 0), `cotisationsAValider`
+    (EN_ATTENTE + EN_RETARD). Confirmation : `forcer: true`.
+  - **Effets** : demandes d'adhésion EN_ATTENTE → REFUSEE et priorités actives → ANNULEE, sans
+    notification individuelle ; membres actifs notifiés (`TONTINE_CLOTUREE`). Événementielle arrêtée avant
+    son terme : distribution finale immédiate (`CycleService.distribuerMaintenant` : sous-cycles EN_ATTENTE
+    retirés logiquement, sous-cycle en cours clôturé).
+  - **Après la clôture** (rotative) : un tour déjà commencé se remet encore (`PUT …/cycles/{id}/cloturer`)
+    et les retards s'encaissent toujours, compléments compris (suivi) ; plus aucun tour ne s'ouvre (le
+    suivant n'est pas activé en mode AUTOMATIQUE, `POST /cycles` exige ACTIVE) ; les rappels de 8h ignorent
+    les tours d'une tontine TERMINEE.
 
 ---
 

@@ -66,6 +66,7 @@ public final class ResponseMessageConstants {
   public static final String TONTINE_ACCESS_DENIED = "Accès non autorisé à cette tontine";
   public static final String TONTINE_ACTIVATED = "Tontine activée avec succès";
   public static final String TONTINE_SUSPENDED = "Tontine suspendue avec succès";
+  public static final String TONTINE_CLOTUREE = "Tontine clôturée avec succès";
 
   // Cycle
   public static final String CYCLE_LIST_SUCCESS = "Liste des cycles récupérée avec succès";

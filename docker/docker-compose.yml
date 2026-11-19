@@ -152,6 +152,7 @@ services:
       BOOTSTRAP_SUPER_ADMIN_PHONE: ${BOOTSTRAP_SUPER_ADMIN_PHONE:-+221000000000}
       OPENWA_API_URL: http://openwa:3000
       OPENWA_MOCK: ${OPENWA_MOCK:-false}
+      OPENWA_CATEGORIES: ${OPENWA_CATEGORIES:-OTP,INVITATION,JACKPOT}
       # Liens QR / invitations / WhatsApp -> front local
       APP_URL: ${APP_URL:-http://localhost:4200}
     ports:

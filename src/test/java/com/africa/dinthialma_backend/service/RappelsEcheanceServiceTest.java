@@ -20,6 +20,7 @@ import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import com.africa.dinthialma_backend.member.entity.TontineMembre;
 import com.africa.dinthialma_backend.member.repository.TontineMembreRepository;
 import com.africa.dinthialma_backend.notification.codeList.CanalRappel;
+import com.africa.dinthialma_backend.notification.codeList.CategorieWhatsapp;
 import com.africa.dinthialma_backend.notification.codeList.NatureRappel;
 import com.africa.dinthialma_backend.notification.codeList.NotificationType;
 import com.africa.dinthialma_backend.notification.service.JournalRappels;
@@ -75,6 +76,7 @@ class RappelsEcheanceServiceTest {
 
   @BeforeEach
   void setUp() {
+    lenient().when(whatsappService.estActive(CategorieWhatsapp.RAPPEL)).thenReturn(true);
     gestionnaire = Fixtures.user("Gestionnaire");
     tontine = Fixtures.tontine(gestionnaire);
     tontine.setNom("Hebdo");
@@ -134,8 +136,8 @@ class RappelsEcheanceServiceTest {
     verifierRappels(2, "5 000 F pour Hebdo est attendue demain avant 20h00");
     verify(notificationService, never())
         .notify(eq(payeur.getUser().getId()), any(), any(), any(), any(), any());
-    verify(whatsappService).send(eq(refuse.getUser().getPhone()), anyString());
-    verify(whatsappService).send(eq(absent.getUser().getPhone()), anyString());
+    verify(whatsappService).sendRappelEcheance(eq(refuse.getUser().getPhone()), anyString());
+    verify(whatsappService).sendRappelEcheance(eq(absent.getUser().getPhone()), anyString());
     verify(journal)
         .reserver(
             echeance.getId(), absent.getUser().getId(), NatureRappel.VEILLE, CanalRappel.IN_APP);
@@ -160,7 +162,18 @@ class RappelsEcheanceServiceTest {
   void heuresCalmes() {
     service.traiter(ECHEANCE.minusDays(1).withHour(21).withMinute(30));
     verifierRappels(2, "demain");
-    verify(whatsappService, never()).send(anyString(), anyString());
+    verify(whatsappService, never()).sendRappelEcheance(anyString(), anyString());
+    verify(journal, never()).reserver(any(), any(), any(), eq(CanalRappel.WHATSAPP));
+  }
+
+  @Test
+  @DisplayName(
+      "rappels WhatsApp désactivés (OPENWA_CATEGORIES) : in-app seulement, rien de réservé")
+  void whatsappDesactive() {
+    when(whatsappService.estActive(CategorieWhatsapp.RAPPEL)).thenReturn(false);
+    service.traiter(ECHEANCE.minusHours(3));
+    verifierRappels(2, "Plus que 3 h");
+    verify(whatsappService, never()).sendRappelEcheance(anyString(), anyString());
     verify(journal, never()).reserver(any(), any(), any(), eq(CanalRappel.WHATSAPP));
   }
 
@@ -170,7 +183,7 @@ class RappelsEcheanceServiceTest {
     when(journal.reserver(any(), any(), any(), any())).thenReturn(false);
     service.traiter(ECHEANCE.minusHours(1));
     verify(notificationService, never()).notify(any(), any(), any(), any(), any(), any());
-    verify(whatsappService, never()).send(anyString(), anyString());
+    verify(whatsappService, never()).sendRappelEcheance(anyString(), anyString());
   }
 
   @Test
@@ -192,7 +205,7 @@ class RappelsEcheanceServiceTest {
             any());
     verify(notificationService, never())
         .notify(any(), eq(NotificationType.RAPPEL_COTISATION), any(), any(), any(), any());
-    verify(whatsappService, never()).send(anyString(), anyString());
+    verify(whatsappService, never()).sendRappelEcheance(anyString(), anyString());
 
     // au-delà de 24 h : plus rien
     clearInvocations(notificationService, journal);
@@ -274,7 +287,7 @@ class RappelsEcheanceServiceTest {
   void sansTelephoneNiGestionnaire() {
     absent.getUser().setPhone(null);
     service.traiter(ECHEANCE.minusHours(2));
-    verify(whatsappService, times(1)).send(anyString(), anyString());
+    verify(whatsappService, times(1)).sendRappelEcheance(anyString(), anyString());
 
     tontine.setCreePar(null);
     service.traiter(ECHEANCE.plusHours(2));

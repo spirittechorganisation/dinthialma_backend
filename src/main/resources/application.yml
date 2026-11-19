@@ -201,3 +201,6 @@ lam:
 openwa:
   api-url: ${OPENWA_API_URL:http://localhost:3000}
   mock: ${OPENWA_MOCK:true}
+  # Familles de messages envoyées (OTP, INVITATION, JACKPOT, COTISATION, RAPPEL). Les autres sont
+  # ignorées ; les notifications in-app ne sont pas concernées. Vide = aucun message.
+  categories: ${OPENWA_CATEGORIES:OTP,INVITATION,JACKPOT}
