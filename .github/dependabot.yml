@@ -1,0 +1,128 @@
+version: 2
+
+# Mises à jour automatiques des dépendances du backend.
+#
+# Flux : toutes les PR de Dependabot visent `develop` (branche par défaut, qui ne
+# déploie rien : un push sur develop construit seulement l'image `:develop`).
+# Elles arrivent sur `main` par la PR develop → main. Les correctifs de sécurité
+# visent eux aussi la branche par défaut, donc `develop`.
+#
+# Règle : aucune montée de version MAJEURE automatique pour les briques structurantes
+# (framework, authentification, base de données, formatage, images de base). Chacune
+# demande une migration préparée dans une tâche dédiée. Même règle que le frontend,
+# après les incidents du 17 et du 18/11 (montées majeures mergées sur main).
+#
+# Actions GitHub : elles sont épinglées par SHA et la règle de l'organisation
+# n'autorise que des SHA précis pour appleboy/ssh-action. Une PR de mise à jour
+# d'action doit modifier ci-branches.yml ET docker-publish.yml (mêmes SHA) et,
+# pour ssh-action, s'accompagner de la mise à jour de la règle de l'organisation.
+
+updates:
+  # ── Maven (pom.xml) ────────────────────────────────────────────────────────
+  - package-ecosystem: "maven"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "monthly"
+      time: "08:00"
+      timezone: "Africa/Dakar"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependances"
+      - "securite"
+    groups:
+      # Mineures et correctifs regroupés : une PR par mois
+      maven-mineures:
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Spring Boot 4 (et ce qui en dépend) : migration à préparer
+      - dependency-name: "org.springframework.boot:*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "org.springdoc:*"
+        update-types: ["version-update:semver-major"]
+      # Client Keycloak : doit rester aligné sur la version majeure du serveur (26)
+      - dependency-name: "org.keycloak:*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "com.github.dasniko:testcontainers-keycloak"
+        update-types: ["version-update:semver-major"]
+      # Testcontainers 2 : changements d'API dans les tests d'intégration
+      - dependency-name: "org.testcontainers:*"
+        update-types: ["version-update:semver-major"]
+      # Plugin de formatage : une nouvelle version de google-java-format peut
+      # reformater tout le code et faire échouer le Stage 1 — montée manuelle
+      # accompagnée d'un `./mvnw fmt:format`
+      - dependency-name: "com.spotify.fmt:fmt-maven-plugin"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  # ── GitHub Actions ─────────────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "monthly"
+      time: "08:00"
+      timezone: "Africa/Dakar"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependances"
+      - "securite"
+    groups:
+      actions-mineures:
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # appleboy/ssh-action : la règle de l'organisation n'autorise qu'un SHA précis
+      # (v1.2.0). Toute PR automatique échouerait au démarrage (startup_failure, #44).
+      # Montée manuelle : mettre à jour la règle de l'organisation, puis le SHA dans
+      # docker-publish.yml et ci-branches.yml (job « Sondes »).
+      - dependency-name: "appleboy/ssh-action"
+
+  # ── Images de base (Dockerfile) ────────────────────────────────────────────
+  - package-ecosystem: "docker"
+    directories:
+      - "/"                 # eclipse-temurin (JDK/JRE 21)
+      - "/docker/openwa"    # node (passerelle WhatsApp)
+    target-branch: "develop"
+    schedule:
+      interval: "monthly"
+      time: "08:00"
+      timezone: "Africa/Dakar"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependances"
+      - "securite"
+    ignore:
+      # Versions LTS choisies à la main (Java 21, Node 20) : sans cette règle,
+      # Dependabot proposerait la dernière majeure, même non LTS
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+
+  # ── Services de l'infrastructure (docker-compose) ──────────────────────────
+  - package-ecosystem: "docker-compose"
+    directory: "/docker"
+    target-branch: "develop"
+    schedule:
+      interval: "monthly"
+      time: "08:00"
+      timezone: "Africa/Dakar"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependances"
+      - "securite"
+    ignore:
+      # PostgreSQL : une version majeure impose une migration des données
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
+      # Keycloak : toutes les mises à jour sont ignorées ici. Le Keycloak de production
+      # tourne depuis le dépôt d'infra (/opt/infra) ; ces fichiers ne servent qu'au
+      # développement local et au VPS historique. Une montée de Keycloak migre sa base
+      # sans retour possible : elle se fait partout à la fois (infra, compose, client
+      # Java org.keycloak:*), dans une tâche dédiée, avec sauvegarde (cf. #43).
+      # Les deux noms couvrent l'image avec et sans le registre quay.io.
+      - dependency-name: "quay.io/keycloak/keycloak"
+      - dependency-name: "keycloak/keycloak"
