@@ -8,6 +8,7 @@ import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import com.africa.dinthialma_backend.member.entity.TontineMembre;
 import com.africa.dinthialma_backend.member.repository.TontineMembreRepository;
 import com.africa.dinthialma_backend.notification.codeList.CanalRappel;
+import com.africa.dinthialma_backend.notification.codeList.CategorieWhatsapp;
 import com.africa.dinthialma_backend.notification.codeList.NatureRappel;
 import com.africa.dinthialma_backend.notification.codeList.NotificationType;
 import com.africa.dinthialma_backend.notification.dto.NotificationLiens;
@@ -165,7 +166,8 @@ public class RappelsEcheanceService {
       NatureRappel nature,
       LocalDateTime maintenant) {
     String message = messageRappel(echeance, nature);
-    boolean whatsappAutorise = whatsappAutorise(maintenant);
+    boolean whatsappAutorise =
+        whatsappService.estActive(CategorieWhatsapp.RAPPEL) && whatsappAutorise(maintenant);
     for (TontineMembre membre : membres) {
       User user = membre.getUser();
       if (journal.reserver(echeance.getId(), user.getId(), nature, CanalRappel.IN_APP)) {
@@ -180,7 +182,7 @@ public class RappelsEcheanceService {
       if (whatsappAutorise
           && user.getPhone() != null
           && journal.reserver(echeance.getId(), user.getId(), nature, CanalRappel.WHATSAPP)) {
-        whatsappService.send(user.getPhone(), message);
+        whatsappService.sendRappelEcheance(user.getPhone(), message);
       }
     }
   }

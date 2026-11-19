@@ -1,5 +1,6 @@
 package com.africa.dinthialma_backend.tontine.service.interfaces;
 
+import com.africa.dinthialma_backend.auth.entity.User;
 import com.africa.dinthialma_backend.common.exception.CustomException;
 import com.africa.dinthialma_backend.tontine.dto.BeneficiaireHistoriqueResponse;
 import com.africa.dinthialma_backend.tontine.dto.CloturerCycleRequest;
@@ -7,6 +8,7 @@ import com.africa.dinthialma_backend.tontine.dto.CycleResponse;
 import com.africa.dinthialma_backend.tontine.dto.OpenCycleRequest;
 import com.africa.dinthialma_backend.tontine.dto.PropositionTourResponse;
 import com.africa.dinthialma_backend.tontine.dto.SelectionnerBeneficiaireRequest;
+import com.africa.dinthialma_backend.tontine.entity.Tontine;
 import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
@@ -79,6 +81,15 @@ public interface CycleService {
    */
   Optional<CycleResponse> remettreSiTousPayes(String keycloakId, UUID tontineId, UUID cycleId)
       throws CustomException;
+
+  /**
+   * Distribution finale immédiate d'une tontine événementielle clôturée avant son terme (B33) : les
+   * sous-cycles pas encore commencés sont retirés logiquement et le sous-cycle en cours est
+   * clôturé, ce qui calcule et enregistre la part de chaque membre sur les cotisations validées.
+   * Sans effet sur une rotative ou si la distribution finale est déjà faite. Les droits sont
+   * vérifiés par l'appelant.
+   */
+  void distribuerMaintenant(User caller, Tontine tontine);
 
   /**
    * Liste l'historique des bénéficiaires de jackpot d'une tontine (cycles TERMINÉ avec bénéficiaire

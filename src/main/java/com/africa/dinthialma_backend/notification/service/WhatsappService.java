@@ -1,6 +1,9 @@
 package com.africa.dinthialma_backend.notification.service;
 
+import com.africa.dinthialma_backend.notification.codeList.CategorieWhatsapp;
+import java.util.EnumSet;
 import java.util.Map;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -26,10 +29,42 @@ public class WhatsappService {
   @Value("${dinthialma.app.url:https://www.dinthialma.com}")
   private String appUrl;
 
+  /**
+   * Familles de messages réellement envoyées ({@code OPENWA_CATEGORIES}). Les autres sont ignorées
+   * : utile pour rester sous les quotas d'un compte de test.
+   */
+  @Value("${openwa.categories:OTP,INVITATION,JACKPOT}")
+  private Set<CategorieWhatsapp> categories = EnumSet.allOf(CategorieWhatsapp.class);
+
+  /** Vrai si les messages de cette famille partent réellement. */
+  public boolean estActive(CategorieWhatsapp categorie) {
+    return categories.contains(categorie);
+  }
+
+  /** Envoie le message si sa famille est active, sinon l'ignore (trace en debug). */
+  private void send(CategorieWhatsapp categorie, String phone, String message) {
+    if (!estActive(categorie)) {
+      log.debug("WhatsApp {} désactivé – message non envoyé à {}", categorie, phone);
+      return;
+    }
+    send(phone, message);
+  }
+
+  /** Message de suivi d'une cotisation (déclaration, encaissement, validation, refus). */
+  public void sendCotisation(String phone, String message) {
+    send(CategorieWhatsapp.COTISATION, phone, message);
+  }
+
+  /** Rappel d'échéance planifié (veille, N heures avant). */
+  public void sendRappelEcheance(String phone, String message) {
+    send(CategorieWhatsapp.RAPPEL, phone, message);
+  }
+
   private final RestClient restClient = RestClient.create();
 
   /**
-   * Envoie un message WhatsApp via l'API OpenWA. En mode mock, affiche le message dans les logs.
+   * Envoie un message WhatsApp via l'API OpenWA, sans filtre de famille. En mode mock, affiche le
+   * message dans les logs.
    *
    * @param phone numéro sans le «+» (ex : 221781234567)
    * @param message contenu du message (supporte le formatage WhatsApp : *gras*, _italique_)
@@ -65,7 +100,7 @@ public class WhatsappService {
         "🔐 *Dinthialma* – Votre code de vérification : *"
             + otp
             + "*\nValable 10 minutes. Ne le partagez pas.";
-    send(phone, message);
+    send(CategorieWhatsapp.OTP, phone, message);
   }
 
   /** Envoie un rappel de cotisation par WhatsApp. */
@@ -77,7 +112,7 @@ public class WhatsappService {
             + tontineName
             + "* est en attente.\n👉 Connectez-vous pour régulariser : "
             + appUrl;
-    send(phone, message);
+    send(CategorieWhatsapp.RAPPEL, phone, message);
   }
 
   /** Informe un nouveau membre pré-inscrit de son ajout à une tontine. */
@@ -87,7 +122,7 @@ public class WhatsappService {
             + tontineName
             + "* sur *Dinthialma*.\nInscrivez-vous pour accéder à votre compte et suivre vos cotisations :\n👉 "
             + appUrl;
-    send(phone, message);
+    send(CategorieWhatsapp.INVITATION, phone, message);
   }
 
   /** Notifie le bénéficiaire du prochain jackpot. */
@@ -99,7 +134,7 @@ public class WhatsappService {
             + amount
             + "*.\n👉 Consultez les détails sur : "
             + appUrl;
-    send(phone, message);
+    send(CategorieWhatsapp.JACKPOT, phone, message);
   }
 
   /**
@@ -123,7 +158,7 @@ public class WhatsappService {
             + joursRestants
             + "*\nContactez votre gestionnaire si besoin.\n👉 "
             + appUrl;
-    send(phone, message);
+    send(CategorieWhatsapp.RAPPEL, phone, message);
   }
 
   /**
@@ -152,7 +187,7 @@ public class WhatsappService {
             + montantTotal
             + "*\n👉 Enregistrez votre cotisation : "
             + appUrl;
-    send(phone, message);
+    send(CategorieWhatsapp.RAPPEL, phone, message);
   }
 
   /**
@@ -199,7 +234,7 @@ public class WhatsappService {
             + suffix
             + "\n👉 "
             + appUrl;
-    send(phone, message);
+    send(CategorieWhatsapp.RAPPEL, phone, message);
   }
 
   /** Notifie chaque membre de la distribution finale d'une tontine événementielle. */
@@ -215,7 +250,7 @@ public class WhatsappService {
             + montantCotise
             + " FCFA).\n👉 Consultez les détails sur : "
             + appUrl;
-    send(phone, message);
+    send(CategorieWhatsapp.JACKPOT, phone, message);
   }
 
   /** Notifie l'admin créateur du résumé de clôture d'une tontine événementielle. */
@@ -231,7 +266,7 @@ public class WhatsappService {
             + nbMembres
             + " membre(s).\n👉 Voir le rapport : "
             + appUrl;
-    send(phone, message);
+    send(CategorieWhatsapp.JACKPOT, phone, message);
   }
 
   /** Notifie l'admin de la désignation manuelle d'un bénéficiaire de jackpot. */
@@ -246,6 +281,6 @@ public class WhatsappService {
             + tontineName
             + "*).\n👉 Suivre la tontine : "
             + appUrl;
-    send(phone, message);
+    send(CategorieWhatsapp.JACKPOT, phone, message);
   }
 }
