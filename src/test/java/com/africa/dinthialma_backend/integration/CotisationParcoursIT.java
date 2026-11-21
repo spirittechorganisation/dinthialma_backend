@@ -291,4 +291,43 @@ class CotisationParcoursIT extends AbstractIntegrationTest {
         .isEqualTo("INVALID_PARAMETER");
     assertThat(api.get(cotisations(t) + "/export", t.membre().jeton()).statut()).isEqualTo(403);
   }
+
+  @Test
+  @DisplayName(
+      "B44 : membre SUSPENDU ou SORTI → MEMBRE_INACTIF (déclaration et saisie) ; sa cotisation"
+          + " déjà déclarée reste validable")
+  void membreInactif() {
+    TontineEnCours t = donnees.tontineEnCours("Membre inactif");
+    String g = t.gestionnaire().jeton();
+    String declaree =
+        donnees
+            .declarer(t.membre().jeton(), t.tontineId(), t.cycleId(), MONTANT)
+            .path("id")
+            .asText();
+    String statut = "/v1/tontines/" + t.tontineId() + "/membres/" + t.membreId() + "/statut";
+    Map<String, Object> saisie =
+        Map.of("membreId", t.membreId(), "cycleId", t.cycleId(), "montant", MONTANT);
+
+    TestDataFactory.attendre(api.patch(statut, g, Map.of("statut", "SUSPENDU")), 200);
+    Reponse parLeMembre =
+        api.post(
+            cotisations(t), t.membre().jeton(), Map.of("cycleId", t.cycleId(), "montant", MONTANT));
+    assertThat(parLeMembre.statut()).isEqualTo(400);
+    assertThat(parLeMembre.code()).isEqualTo("MEMBRE_INACTIF");
+    Reponse parLeGestionnaire = api.post(cotisations(t) + "/admin", g, saisie);
+    assertThat(parLeGestionnaire.statut()).isEqualTo(400);
+    assertThat(parLeGestionnaire.code()).isEqualTo("MEMBRE_INACTIF");
+
+    // L'argent a été remis avant la suspension : la validation reste possible
+    assertThat(
+            TestDataFactory.attendre(
+                    api.put(cotisations(t) + "/" + declaree + "/valider", g, null), 200)
+                .data()
+                .path("statut")
+                .asText())
+        .isEqualTo("VALIDE");
+
+    TestDataFactory.attendre(api.patch(statut, g, Map.of("statut", "SORTI")), 200);
+    assertThat(api.post(cotisations(t) + "/admin", g, saisie).code()).isEqualTo("MEMBRE_INACTIF");
+  }
 }
