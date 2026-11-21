@@ -59,7 +59,7 @@
 | B45 | Correctif : garde-fou de date à la clôture d'un tour (`TOUR_NON_COMMENCE`, `CLOTURE_FINALE_PREMATUREE`) | Tours, Remise du jackpot, Clôture | **P0 — fait** (2026-11-21, à mettre en production) |
 | B46 | Correctif : date de début passée refusée à la création, la modification et l'activation (`DATE_DEBUT_PASSEE`) | Créer, Modifier, Activer | **P0 — fait** (2026-11-21, à mettre en production) |
 | B47 | Pas de paiement sur un sous-cycle événementiel pas encore commencé | Payer, Encaisser | P1 — fait (2026-11-21, branche `fix/b43-b46-distribution-cloture`) |
-| B48 | Récapitulatifs cohérents avec la distribution : membres SORTI qui ont cotisé | Récap tour, Total par membre | P1 (décidé le 2026-11-21 : paramètre `inclureSortis`, à faire) |
+| B48 | Récapitulatifs cohérents avec la distribution : membres SORTI qui ont cotisé | Récap tour, Total par membre | P1 — fait (2026-11-21, branche `feature/b48-recap-inclure-sortis`) |
 
 ---
 
@@ -921,13 +921,13 @@ Le gestionnaire choisit une **option par défaut** dans les réglages (`modeRemi
 - **Rotatives exclues** : le paiement d'avance d'un tour pas commencé y reste permis, car c'est lui qui rend possible la remise anticipée `TOUS_PAYES` décidée en B45 (confirmé le 2026-11-21).
 - **Tests** : `CotisationServiceImplTest.SousCycleNonCommence` (événementielle refusée, jour même accepté, rotative d'avance acceptée), IT `ClotureTontineIT#paiementJourNonCommence`.
 
-#### B48 — Récapitulatifs cohérents avec la distribution (décidé le 2026-11-21, à faire)
+#### B48 — Récapitulatifs cohérents avec la distribution (fait le 2026-11-21)
 - **Constat** : depuis B43, un membre SORTI qui a cotisé reçoit sa part, mais `GET /cotisations/recap-total` et `GET /cotisations/recap/{cycleId}` excluent toujours les membres `SORTI` : leurs totaux ne correspondent plus à la distribution.
 - **Décision** : paramètre **`?inclureSortis=true`** (défaut `false` : comportement actuel inchangé tant que le front ne l'envoie pas) :
   - `recap-total` avec `inclureSortis=true` : ajoute les membres SORTI **qui ont au moins une cotisation VALIDE** (la ligne porte déjà `statutMembre`, le front les grise) ;
-  - récap par tour avec `inclureSortis=true` : ajoute un membre SORTI s'il a une cotisation **sur ce tour** ;
+  - récap par tour avec `inclureSortis=true` : ajoute un membre SORTI s'il a une cotisation **sur ce tour** (EN_ATTENTE, VALIDE ou EN_RETARD ; une cotisation REFUSE ne compte pas) ;
   - membres retirés (`DELETE`, `deletedAt`) : toujours exclus des récaps ; ils n'apparaissent que dans la distribution (où ils reçoivent leur part).
-- **Estimation** : 0,5 à 1 j.
+- **Réalisation** : `CotisationService#getTontineRecapTotal` / `#getCycleRecap` (surcharges avec `inclureSortis`, les signatures historiques délèguent avec `false`), `TontineMembreSpecifications#horsSortisSaufCotisants`. Tests : `CotisationServiceImplTest.RecapsAvecSortis`, IT `CotisationParcoursIT#recapsInclureSortis`.
 
 ### 7.3 Conceptions (à planifier, détail dans le diagnostic du 2026-11-21)
 

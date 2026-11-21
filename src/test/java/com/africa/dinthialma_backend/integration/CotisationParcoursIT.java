@@ -330,4 +330,70 @@ class CotisationParcoursIT extends AbstractIntegrationTest {
     TestDataFactory.attendre(api.patch(statut, g, Map.of("statut", "SORTI")), 200);
     assertThat(api.post(cotisations(t) + "/admin", g, saisie).code()).isEqualTo("MEMBRE_INACTIF");
   }
+
+  @Test
+  @DisplayName(
+      "B48 : récaps avec ?inclureSortis=true → SORTI ayant cotisé inclus ; sans → exclus ; SORTI"
+          + " sans cotisation et membre retiré toujours exclus")
+  void recapsInclureSortis() {
+    TontineEnCours t = donnees.tontineEnCours("Récap sortis");
+    String g = t.gestionnaire().jeton();
+    String membres = "/v1/tontines/" + t.tontineId() + "/membres";
+    String sansCotisation = preInscrire(g, membres, "SansCotisation");
+    String retire = preInscrire(g, membres, "Retire");
+    TestDataFactory.attendre(
+        api.post(
+            cotisations(t) + "/admin",
+            g,
+            Map.of("membreId", t.membreId(), "cycleId", t.cycleId(), "montant", MONTANT)),
+        201);
+    TestDataFactory.attendre(
+        api.post(
+            cotisations(t) + "/admin",
+            g,
+            Map.of("membreId", retire, "cycleId", t.cycleId(), "montant", MONTANT)),
+        201);
+    for (String id : List.of(t.membreId(), sansCotisation)) {
+      TestDataFactory.attendre(
+          api.patch(membres + "/" + id + "/statut", g, Map.of("statut", "SORTI")), 200);
+    }
+    TestDataFactory.attendre(api.delete(membres + "/" + retire, g), 200);
+
+    String total = cotisations(t) + "/recap-total";
+    assertThat(api.get(total, g).data().path("content")).isEmpty();
+    JsonNode avecSortis = api.get(total + "?inclureSortis=true", g).data().path("content");
+    assertThat(ids(avecSortis, "membreId")).containsExactly(t.membreId());
+    assertThat(avecSortis.get(0).path("statutMembre").asText()).isEqualTo("SORTI");
+    assertThat(avecSortis.get(0).path("totalCotise").asInt()).isEqualTo(MONTANT);
+
+    String tour = cotisations(t) + "/recap/" + t.cycleId();
+    assertThat(api.get(tour, g).data().path("content")).isEmpty();
+    JsonNode tourAvecSortis = api.get(tour + "?inclureSortis=true", g).data().path("content");
+    assertThat(ids(tourAvecSortis, "membreId")).containsExactly(t.membreId());
+    assertThat(tourAvecSortis.get(0).path("statutCotisation").asText()).isEqualTo("VALIDE");
+  }
+
+  private String preInscrire(String jeton, String membres, String prenom) {
+    return TestDataFactory.attendre(
+            api.post(
+                membres,
+                jeton,
+                Map.of(
+                    "phone",
+                    TestDataFactory.nouveauTelephone(),
+                    "firstName",
+                    prenom,
+                    "lastName",
+                    "Test")),
+            201)
+        .data()
+        .path("id")
+        .asText();
+  }
+
+  private static List<String> ids(JsonNode liste, String champ) {
+    return StreamSupport.stream(liste.spliterator(), false)
+        .map(x -> x.path(champ).asText())
+        .toList();
+  }
 }

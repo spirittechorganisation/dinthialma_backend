@@ -153,6 +153,20 @@ public interface CotisationService {
       throws CustomException;
 
   /**
+   * Récapitulatif d'un cycle (B48) : avec {@code inclureSortis}, ajoute les membres SORTI qui ont
+   * une cotisation (hors REFUSE) sur ce cycle ; sans, membres SORTI exclus (comportement
+   * historique). Les membres retirés (suppression logique) restent exclus.
+   */
+  Page<CycleRecapCotisationResponse> getCycleRecap(
+      String keycloakId,
+      UUID tontineId,
+      UUID cycleId,
+      UUID echeanceId,
+      boolean inclureSortis,
+      Pageable pageable)
+      throws CustomException;
+
+  /**
    * Retourne le total cumulé cotisé (VALIDÉ) par membre, tous cycles confondus, pour une tontine.
    *
    * <p>Un enregistrement par membre actif/suspendu de la tontine. Les membres sans cotisation
@@ -166,4 +180,13 @@ public interface CotisationService {
    */
   Page<MembreTotalCotisationResponse> getTontineRecapTotal(
       String keycloakId, UUID tontineId, Pageable pageable) throws CustomException;
+
+  /**
+   * Total cumulé par membre (B48) : avec {@code inclureSortis}, ajoute les membres SORTI qui ont au
+   * moins une cotisation VALIDE (cohérent avec la distribution finale, B43) ; sans, membres SORTI
+   * exclus (comportement historique). Les membres retirés (suppression logique) restent exclus.
+   */
+  Page<MembreTotalCotisationResponse> getTontineRecapTotal(
+      String keycloakId, UUID tontineId, boolean inclureSortis, Pageable pageable)
+      throws CustomException;
 }
