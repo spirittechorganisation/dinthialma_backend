@@ -1089,4 +1089,120 @@ class CotisationServiceImplTest {
           .satisfies(e -> code(e, ErrorCode.ECHEANCE_INTROUVABLE));
     }
   }
+
+  @Nested
+  @DisplayName("B47 : pas de paiement sur un sous-cycle événementiel pas encore commencé")
+  class SousCycleNonCommence {
+
+    @Test
+    @DisplayName(
+        "événementielle, sous-cycle de demain : déclaration et saisie → ECHEANCE_NON_OUVERTE")
+    void evenementielleRefusee() {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      cycle.setDateDebut(LocalDate.now().plusDays(1));
+      cycle.setDateFin(LocalDate.now().plusDays(1));
+
+      assertThatThrownBy(
+              () ->
+                  service.recordCotisation(
+                      awa.getKeycloakId(), tontine.getId(), declaration("1000")))
+          .isInstanceOf(BadRequestException.class)
+          .satisfies(e -> code(e, ErrorCode.ECHEANCE_NON_OUVERTE));
+      assertThatThrownBy(
+              () ->
+                  service.adminRecordCotisation(
+                      gestionnaire.getKeycloakId(), tontine.getId(), saisie("1000", null)))
+          .isInstanceOf(BadRequestException.class)
+          .satisfies(e -> code(e, ErrorCode.ECHEANCE_NON_OUVERTE));
+      verify(cotisationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("événementielle, sous-cycle du jour : saisie acceptée")
+    void evenementielleDuJour() throws Exception {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      cycle.setDateDebut(LocalDate.now());
+      cycle.setDateFin(LocalDate.now());
+
+      assertThat(
+              service
+                  .adminRecordCotisation(
+                      gestionnaire.getKeycloakId(), tontine.getId(), saisie("1000", null))
+                  .getStatut())
+          .isEqualTo(CotisationStatut.VALIDE);
+    }
+
+    @Test
+    @DisplayName(
+        "rotative, tour pas encore commencé : paiement d'avance accepté (remise TOUS_PAYES)")
+    void rotativeAcceptee() throws Exception {
+      cycle.setDateDebut(LocalDate.now().plusDays(10));
+
+      assertThat(
+              service
+                  .recordCotisation(awa.getKeycloakId(), tontine.getId(), declaration("1000"))
+                  .getStatut())
+          .isEqualTo(CotisationStatut.EN_ATTENTE);
+    }
+  }
+
+  @Nested
+  @DisplayName("B44 : membre non actif (SORTI, SUSPENDU)")
+  class MembreInactif {
+
+    @Test
+    @DisplayName("saisie du gestionnaire pour un membre SUSPENDU ou SORTI → MEMBRE_INACTIF")
+    void saisieRefusee() {
+      for (MembreStatut statut : List.of(MembreStatut.SUSPENDU, MembreStatut.SORTI)) {
+        membre.setStatut(statut);
+        assertThatThrownBy(
+                () ->
+                    service.adminRecordCotisation(
+                        gestionnaire.getKeycloakId(), tontine.getId(), saisie("1000", null)))
+            .isInstanceOf(BadRequestException.class)
+            .satisfies(e -> code(e, ErrorCode.MEMBRE_INACTIF));
+      }
+      verify(cotisationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("déclaration par un membre SUSPENDU ou SORTI → MEMBRE_INACTIF")
+    void declarationRefusee() {
+      for (MembreStatut statut : List.of(MembreStatut.SUSPENDU, MembreStatut.SORTI)) {
+        membre.setStatut(statut);
+        assertThatThrownBy(
+                () ->
+                    service.recordCotisation(
+                        awa.getKeycloakId(), tontine.getId(), declaration("1000")))
+            .isInstanceOf(BadRequestException.class)
+            .satisfies(e -> code(e, ErrorCode.MEMBRE_INACTIF));
+      }
+      verify(cotisationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("régularisation sur un tour TERMINE pour un membre SORTI → MEMBRE_INACTIF")
+    void regularisationRefusee() {
+      cycle.setStatut(CycleStatut.TERMINE);
+      membre.setStatut(MembreStatut.SORTI);
+      assertThatThrownBy(
+              () ->
+                  service.adminRecordCotisation(
+                      gestionnaire.getKeycloakId(), tontine.getId(), saisie("1000", null)))
+          .satisfies(e -> code(e, ErrorCode.MEMBRE_INACTIF));
+    }
+
+    @Test
+    @DisplayName(
+        "validation d'une cotisation EN_ATTENTE d'un membre suspendu entre-temps : permise")
+    void validationPermise() throws Exception {
+      Cotisation c = existante(CotisationStatut.EN_ATTENTE);
+      membre.setStatut(MembreStatut.SUSPENDU);
+
+      CotisationResponse r =
+          service.validateCotisation(gestionnaire.getKeycloakId(), tontine.getId(), c.getId());
+
+      assertThat(r.getStatut()).isEqualTo(CotisationStatut.VALIDE);
+    }
+  }
 }

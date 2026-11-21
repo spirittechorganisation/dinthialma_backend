@@ -92,13 +92,17 @@ public class TontineController {
               + " `ordreBeneficiaire`, `nombreMembres` (≥2), `modeCycle`, `montant`.\n"
               + "- `EVENEMENTIELLE` – épargne vers un événement (Tabaski, Korité…). Champs"
               + " obligatoires supplémentaires : `dateEcheance` (> `dateDebut`), `montant` si"
-              + " `montantLibre=false`. Champ optionnel : `nomEvenement`, `montantMinimum`.")
+              + " `montantLibre=false`. Champ optionnel : `nomEvenement`, `montantMinimum`.\n\n"
+              + "`dateDebut` : aujourd'hui ou future, heure de Dakar (B46), sinon 400"
+              + " `DATE_DEBUT_PASSEE`.")
   @ApiResponses({
     @ApiResponse(
         responseCode = "201",
         description = "Tontine créée en statut BROUILLON",
         content = @Content(schema = @Schema(implementation = TontineResponse.class))),
-    @ApiResponse(responseCode = "400", description = "Données invalides (validation)"),
+    @ApiResponse(
+        responseCode = "400",
+        description = "Données invalides (validation), `DATE_DEBUT_PASSEE`"),
     @ApiResponse(responseCode = "401", description = "JWT manquant ou expiré"),
   })
   public ResponseEntity<CustomResponse> createTontine(
@@ -238,7 +242,8 @@ public class TontineController {
       description =
           "🔒 Rôles : créateur de la tontine, SUPER_ADMIN.\n\n"
               + "Modification autorisée **uniquement si la tontine est en statut BROUILLON**."
-              + " Les champs null dans la requête ne sont pas modifiés.")
+              + " Les champs null dans la requête ne sont pas modifiés. Une `dateDebut` passée"
+              + " (heure de Dakar) → 400 `DATE_DEBUT_PASSEE` (B46).")
   @ApiResponses({
     @ApiResponse(
         responseCode = "200",
@@ -246,7 +251,7 @@ public class TontineController {
         content = @Content(schema = @Schema(implementation = TontineResponse.class))),
     @ApiResponse(
         responseCode = "400",
-        description = "Données invalides ou tontine pas en BROUILLON"),
+        description = "Données invalides, tontine pas en BROUILLON, `DATE_DEBUT_PASSEE`"),
     @ApiResponse(responseCode = "401", description = "JWT manquant ou expiré"),
     @ApiResponse(
         responseCode = "403",
@@ -317,13 +322,19 @@ public class TontineController {
               + "**EVENEMENTIELLE** : génère automatiquement tous les sous-cycles de"
               + " `dateDebut` à `dateEcheance` selon la `frequence` (JOURNALIERE, HEBDOMADAIRE,"
               + " BIMENSUEL, MENSUEL, TRIMESTRIEL). Le dernier sous-cycle se termine exactement"
-              + " sur `dateEcheance`.")
+              + " sur `dateEcheance`.\n\n"
+              + "**Date de début passée (B46)** : quand l'activation génère les tours (événementielle"
+              + " ou rotative AUTOMATIQUE) et que `dateDebut` est passée depuis la création → 400"
+              + " `DATE_DEBUT_PASSEE` : modifier la date (`PUT /{id}`) puis réactiver. Aucun"
+              + " décalage automatique.")
   @ApiResponses({
     @ApiResponse(
         responseCode = "200",
         description = "Tontine activée",
         content = @Content(schema = @Schema(implementation = TontineResponse.class))),
-    @ApiResponse(responseCode = "400", description = "Tontine déjà ACTIVE ou TERMINEE"),
+    @ApiResponse(
+        responseCode = "400",
+        description = "Tontine déjà ACTIVE ou TERMINEE, `DATE_DEBUT_PASSEE`"),
     @ApiResponse(responseCode = "401", description = "JWT manquant ou expiré"),
     @ApiResponse(responseCode = "403", description = "Accès interdit"),
     @ApiResponse(responseCode = "404", description = "Tontine introuvable"),

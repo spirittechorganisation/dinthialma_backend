@@ -52,6 +52,7 @@ import com.africa.dinthialma_backend.tontine.service.interfaces.CycleService;
 import com.africa.dinthialma_backend.tontine.service.interfaces.RemiseService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -103,6 +104,7 @@ public class CotisationServiceImpl implements CotisationService {
             .findByTontine_IdAndUser_IdAndDeletedAtIsNull(tontineId, caller.getId())
             .orElseThrow(
                 () -> new ForbiddenException("Vous n'êtes pas cotisant dans cette tontine"));
+    verifierMembreActif(membre, true);
 
     CycleTontine cycle = findCycleById(tontineId, request.getCycleId());
 
@@ -222,6 +224,7 @@ public class CotisationServiceImpl implements CotisationService {
         membreRepository
             .findByIdAndTontine_IdAndDeletedAtIsNull(request.getMembreId(), tontineId)
             .orElseThrow(() -> new NotFoundException("Membre introuvable dans cette tontine"));
+    verifierMembreActif(membre, false);
 
     CycleTontine cycle = findCycleById(tontineId, request.getCycleId());
 
@@ -921,12 +924,25 @@ public class CotisationServiceImpl implements CotisationService {
 
   /**
    * Un paiement est accepté sur un tour EN_COURS, ou sur un tour TERMINE pour régulariser un retard
-   * (B33), sauf une fois la distribution finale d'une tontine événementielle faite.
+   * (B33), sauf une fois la distribution finale d'une tontine événementielle faite, et pas sur un
+   * sous-cycle événementiel pas encore commencé (B47).
    */
   private void verifierTourPayable(Tontine tontine, CycleTontine cycle) throws CustomException {
     if (cycle.getStatut() == CycleStatut.EN_ATTENTE) {
       throw new BadRequestException(
           "Ce tour n'est pas encore ouvert aux cotisations", ErrorCode.NO_CYCLE_IN_PROGRESS);
+    }
+    // B47 : un sous-cycle événementiel ouvert par la clôture du précédent ne se paie qu'à partir
+    // de son premier jour (heure de Dakar). Les rotatives gardent le paiement d'avance, qui permet
+    // la remise anticipée quand tous ont payé (B45).
+    if (tontine.getTontineType() == TontineType.EVENEMENTIELLE
+        && cycle.getDateDebut() != null
+        && cycle.getDateDebut().isAfter(Fuseau.maintenant().toLocalDate())) {
+      throw new BadRequestException(
+          "Cette période commence le "
+              + DateTimeFormatter.ofPattern("dd/MM/yyyy").format(cycle.getDateDebut())
+              + " : elle ne peut pas encore être payée",
+          ErrorCode.ECHEANCE_NON_OUVERTE);
     }
     if (cycle.getStatut() == CycleStatut.TERMINE
         && tontine.getTontineType() == TontineType.EVENEMENTIELLE
@@ -935,6 +951,28 @@ public class CotisationServiceImpl implements CotisationService {
           "La distribution finale est faite : cette tontine n'accepte plus de cotisation",
           ErrorCode.REGULARISATION_IMPOSSIBLE);
     }
+  }
+
+  /**
+   * Nouvelle cotisation (déclaration ou saisie, y compris la régularisation d'un tour remis) :
+   * réservée aux membres ACTIF (B44). Les cotisations déjà enregistrées d'un membre suspendu ou
+   * sorti entre-temps restent validables, refusables et corrigeables : l'argent a été remis avant.
+   */
+  private static void verifierMembreActif(TontineMembre membre, boolean parLeMembre)
+      throws CustomException {
+    if (membre.getStatut() == MembreStatut.ACTIF) {
+      return;
+    }
+    String etat = membre.getStatut() == MembreStatut.SUSPENDU ? "suspendue" : "terminée";
+    throw new BadRequestException(
+        parLeMembre
+            ? "Votre participation à cette tontine est "
+                + etat
+                + " : vous ne pouvez pas enregistrer de cotisation"
+            : "La participation de ce membre est "
+                + etat
+                + " : réactivez-le avant d'enregistrer une cotisation",
+        ErrorCode.MEMBRE_INACTIF);
   }
 
   /** Statuts qu'un gestionnaire peut encore valider ou refuser (EN_RETARD depuis B33). */

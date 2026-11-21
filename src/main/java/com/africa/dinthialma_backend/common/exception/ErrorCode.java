@@ -151,7 +151,10 @@ public enum ErrorCode {
   COTISATIONS_PAR_TOUR_NON_MODIFIABLE,
   /** Échéance inconnue (ou d'un autre tour / d'une autre tontine). */
   ECHEANCE_INTROUVABLE,
-  /** Échéance pas encore ouverte : on ne paie pas d'avance. */
+  /**
+   * Échéance pas encore ouverte : on ne paie pas d'avance. Aussi un sous-cycle événementiel dont le
+   * premier jour n'est pas atteint (B47).
+   */
   ECHEANCE_NON_OUVERTE,
   /**
    * Régularisation impossible (B33) : la distribution finale de la tontine événementielle est déjà
@@ -170,7 +173,29 @@ public enum ErrorCode {
    */
   TONTINE_CLOTURE_A_CONFIRMER,
   /** Tontine en BROUILLON ou déjà TERMINEE : elle ne se clôture pas. */
-  TONTINE_NON_CLOTURABLE;
+  TONTINE_NON_CLOTURABLE,
+
+  // ─── Correctifs B43 à B46 ──────────────────────────────────────────────
+  /**
+   * Membre SORTI ou SUSPENDU (B44) : aucune nouvelle cotisation, ni déclarée par lui ni saisie par
+   * le gestionnaire. Le réactiver d'abord.
+   */
+  MEMBRE_INACTIF,
+  /**
+   * Tour dont la date de début n'est pas atteinte (B45, heure de Dakar) : il ne se clôture pas,
+   * sauf en rotative quand tous les membres ont déjà payé.
+   */
+  TOUR_NON_COMMENCE,
+  /**
+   * Dernier sous-cycle d'une événementielle avant son dernier jour (B45) : la distribution finale
+   * attend. Fin anticipée : PUT /v1/tontines/{id}/cloturer avec forcer.
+   */
+  CLOTURE_FINALE_PREMATUREE,
+  /**
+   * Date de début passée (B46) : à la création, à la modification, ou à l'activation qui génère les
+   * tours. Choisir aujourd'hui ou une date future.
+   */
+  DATE_DEBUT_PASSEE;
 
   /** Code générique correspondant à un statut HTTP (repli quand aucun code métier n'est fourni). */
   public static ErrorCode fromStatus(HttpStatusCode status) {

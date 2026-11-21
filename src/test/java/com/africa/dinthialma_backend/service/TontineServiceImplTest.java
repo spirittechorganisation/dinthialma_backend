@@ -59,8 +59,11 @@ import com.africa.dinthialma_backend.tontine.repository.TontineRepository;
 import com.africa.dinthialma_backend.tontine.service.impl.TontineServiceImpl;
 import com.africa.dinthialma_backend.tontine.service.interfaces.CommissionService;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -97,6 +100,10 @@ class TontineServiceImplTest {
   @Mock private AuditService auditService;
   @Mock private NotificationService notificationService;
   @Mock private CommissionService commissionService;
+
+  /** « Aujourd'hui » fixé au 01/12/2025 (B46) : les dates fixes des tests restent futures. */
+  @Spy private Clock horloge = Clock.fixed(Instant.parse("2025-12-01T10:00:00Z"), ZoneOffset.UTC);
+
   @InjectMocks private TontineServiceImpl service;
 
   private User gestionnaire;
@@ -1095,6 +1102,83 @@ class TontineServiceImplTest {
                   .updateTontine(gestionnaire.getKeycloakId(), tontine.getId(), req)
                   .getModeRemise())
           .isEqualTo(ModeRemise.ATTENDRE);
+    }
+  }
+
+  @Nested
+  @DisplayName("B46 : date de début passée")
+  class DateDebutPassee {
+
+    private static final LocalDate AUJOURDHUI = LocalDate.of(2025, 12, 1);
+
+    private void refuse(org.assertj.core.api.ThrowableAssert.ThrowingCallable appel) {
+      assertThatThrownBy(appel)
+          .isInstanceOf(BadRequestException.class)
+          .satisfies(
+              e ->
+                  assertThat(((CustomException) e).getCode())
+                      .isEqualTo(ErrorCode.DATE_DEBUT_PASSEE));
+    }
+
+    @Test
+    @DisplayName("création avec une date passée → DATE_DEBUT_PASSEE, rien d'enregistré")
+    void creation() {
+      CreateTontineRequest r = rotative();
+      r.setDateDebut(AUJOURDHUI.minusDays(1));
+      refuse(() -> service.createTontine(gestionnaire.getKeycloakId(), r));
+      verify(tontineRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("création aujourd'hui : acceptée")
+    void creationAujourdhui() throws Exception {
+      CreateTontineRequest r = rotative();
+      r.setDateDebut(AUJOURDHUI);
+      assertThat(service.createTontine(gestionnaire.getKeycloakId(), r).getDateDebut())
+          .isEqualTo(AUJOURDHUI);
+    }
+
+    @Test
+    @DisplayName("modification en BROUILLON vers une date passée → DATE_DEBUT_PASSEE")
+    void modification() {
+      UpdateTontineRequest maj = new UpdateTontineRequest();
+      maj.setDateDebut(AUJOURDHUI.minusDays(20));
+      refuse(() -> service.updateTontine(gestionnaire.getKeycloakId(), tontine.getId(), maj));
+      assertThat(tontine.getDateDebut()).isEqualTo(LocalDate.now());
+    }
+
+    @Test
+    @DisplayName("activation tardive (événementielle, date devenue passée) → refusée, aucun tour")
+    void activationTardiveEvenementielle() {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      tontine.setDateDebut(AUJOURDHUI.minusDays(2));
+      tontine.setDateEcheance(AUJOURDHUI.plusDays(30));
+      refuse(() -> service.activateTontine(gestionnaire.getKeycloakId(), tontine.getId()));
+      assertThat(cyclesCrees).isEmpty();
+      assertThat(tontine.getStatut()).isEqualTo(TontineStatut.BROUILLON);
+    }
+
+    @Test
+    @DisplayName("activation tardive (rotative AUTOMATIQUE) → refusée")
+    void activationTardiveAutomatique() {
+      tontine.setModeCycle(ModeCycle.AUTOMATIQUE);
+      tontine.setDateDebut(AUJOURDHUI.minusDays(1));
+      refuse(() -> service.activateTontine(gestionnaire.getKeycloakId(), tontine.getId()));
+      assertThat(cyclesCrees).isEmpty();
+    }
+
+    @Test
+    @DisplayName("rotative MANUEL (aucun tour généré) ou réactivation : date passée sans effet")
+    void sansGeneration() throws Exception {
+      tontine.setDateDebut(AUJOURDHUI.minusDays(10));
+      assertThat(service.activateTontine(gestionnaire.getKeycloakId(), tontine.getId()).getStatut())
+          .isEqualTo(TontineStatut.ACTIVE);
+
+      tontine.setModeCycle(ModeCycle.AUTOMATIQUE);
+      tontine.setStatut(TontineStatut.SUSPENDUE);
+      when(cycleRepository.existsByTontine_IdAndDeletedAtIsNull(tontine.getId())).thenReturn(true);
+      assertThat(service.activateTontine(gestionnaire.getKeycloakId(), tontine.getId()).getStatut())
+          .isEqualTo(TontineStatut.ACTIVE);
     }
   }
 }

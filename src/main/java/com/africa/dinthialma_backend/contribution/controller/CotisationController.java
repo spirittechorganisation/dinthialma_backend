@@ -194,7 +194,13 @@ public class CotisationController {
         responseCode = "201",
         description = "Cotisation enregistrée en statut EN_ATTENTE",
         content = @Content(schema = @Schema(implementation = CotisationResponse.class))),
-    @ApiResponse(responseCode = "400", description = "Données invalides ou cycle pas EN_COURS"),
+    @ApiResponse(
+        responseCode = "400",
+        description =
+            "Données invalides, tour pas ouvert, ou membre SORTI / SUSPENDU (`MEMBRE_INACTIF`,"
+                + " B44 : le réactiver d'abord), ou sous-cycle événementiel pas encore commencé"
+                + " (`ECHEANCE_NON_OUVERTE`, B47 : pas de paiement d'avance ; rotatives non"
+                + " concernées)"),
     @ApiResponse(responseCode = "401", description = "JWT manquant ou expiré"),
     @ApiResponse(responseCode = "403", description = "Accès interdit (pas cotisant de la tontine)"),
     @ApiResponse(responseCode = "404", description = "Tontine ou cycle introuvable"),
@@ -239,7 +245,13 @@ public class CotisationController {
         responseCode = "201",
         description = "Cotisation enregistrée et validée",
         content = @Content(schema = @Schema(implementation = CotisationResponse.class))),
-    @ApiResponse(responseCode = "400", description = "Données invalides ou cycle pas EN_COURS"),
+    @ApiResponse(
+        responseCode = "400",
+        description =
+            "Données invalides, tour pas ouvert, ou membre SORTI / SUSPENDU (`MEMBRE_INACTIF`,"
+                + " B44 : le réactiver d'abord), ou sous-cycle événementiel pas encore commencé"
+                + " (`ECHEANCE_NON_OUVERTE`, B47 : pas de paiement d'avance ; rotatives non"
+                + " concernées)"),
     @ApiResponse(responseCode = "401", description = "JWT manquant ou expiré"),
     @ApiResponse(
         responseCode = "403",
