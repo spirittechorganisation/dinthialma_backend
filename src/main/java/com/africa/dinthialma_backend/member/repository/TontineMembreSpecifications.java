@@ -7,8 +7,12 @@ import com.africa.dinthialma_backend.contribution.entity.Cotisation;
 import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import com.africa.dinthialma_backend.member.entity.TontineMembre;
 import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.domain.Specification;
 
@@ -38,6 +42,28 @@ public final class TontineMembreSpecifications {
           cb.like(cb.lower(u.get("firstName")), motif, '\\'),
           cb.like(cb.lower(u.get("lastName")), motif, '\\'),
           cb.like(u.get("phone"), motif, '\\'));
+    };
+  }
+
+  /**
+   * Récapitulatifs avec les membres SORTI qui ont cotisé (B48) : membres non SORTI, ou SORTI ayant
+   * au moins une cotisation non supprimée dont le statut est dans {@code statuts}, sur le cycle
+   * donné ({@code cycleId}) ou sur toute la tontine ({@code null}).
+   */
+  public static Specification<TontineMembre> horsSortisSaufCotisants(
+      UUID cycleId, Collection<CotisationStatut> statuts) {
+    return (root, query, cb) -> {
+      Subquery<Integer> sub = query.subquery(Integer.class);
+      Root<Cotisation> c = sub.from(Cotisation.class);
+      List<Predicate> conditions = new ArrayList<>();
+      conditions.add(cb.equal(c.get("membre"), root));
+      conditions.add(cb.isNull(c.get("deletedAt")));
+      conditions.add(c.get("statut").in(statuts));
+      if (cycleId != null) {
+        conditions.add(cb.equal(c.get("cycle").get("id"), cycleId));
+      }
+      sub.select(cb.literal(1)).where(conditions.toArray(Predicate[]::new));
+      return cb.or(cb.notEqual(root.get("statut"), MembreStatut.SORTI), cb.exists(sub));
     };
   }
 

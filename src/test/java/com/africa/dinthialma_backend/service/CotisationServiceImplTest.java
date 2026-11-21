@@ -883,6 +883,77 @@ class CotisationServiceImplTest {
   }
 
   @Nested
+  @DisplayName("B48 : récapitulatifs avec les membres SORTI qui ont cotisé (inclureSortis)")
+  class RecapsAvecSortis {
+
+    private final Pageable page = PageRequest.of(0, 20);
+
+    @Test
+    @DisplayName(
+        "récap total inclureSortis=true : requête dédiée, le SORTI apparaît avec son total")
+    @SuppressWarnings("unchecked")
+    void recapTotalAvecSortis() throws Exception {
+      TontineMembre sorti = Fixtures.membre(tontine, Fixtures.user("Sorti"), 2);
+      sorti.setStatut(MembreStatut.SORTI);
+      when(membreRepository.findAll(any(Specification.class), eq(page)))
+          .thenReturn(new PageImpl<>(List.of(membre, sorti)));
+      List<Object[]> lignes =
+          List.<Object[]>of(new Object[] {sorti.getId(), new BigDecimal("4000"), 2L});
+      when(cotisationRepository.sumAndCountValideGroupByMembreIn(eq(tontine.getId()), anyList()))
+          .thenReturn(lignes);
+
+      List<MembreTotalCotisationResponse> r =
+          service
+              .getTontineRecapTotal(gestionnaire.getKeycloakId(), tontine.getId(), true, page)
+              .getContent();
+
+      assertThat(r).hasSize(2);
+      assertThat(r.get(1).getStatutMembre()).isEqualTo(MembreStatut.SORTI);
+      assertThat(r.get(1).getTotalCotise()).isEqualByComparingTo("4000");
+      verify(membreRepository, never())
+          .findByTontine_IdAndStatutNotAndDeletedAtIsNull(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("récap total inclureSortis=false : comportement historique (SORTI exclus)")
+    void recapTotalSansSortis() throws Exception {
+      when(membreRepository.findByTontine_IdAndStatutNotAndDeletedAtIsNull(
+              tontine.getId(), MembreStatut.SORTI, page))
+          .thenReturn(new PageImpl<>(List.of(membre)));
+
+      assertThat(
+              service.getTontineRecapTotal(
+                  gestionnaire.getKeycloakId(), tontine.getId(), false, page))
+          .hasSize(1);
+      verify(membreRepository, never()).findAll(any(Specification.class), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("récap d'un tour inclureSortis=true : le SORTI qui a cotisé sur le tour apparaît")
+    @SuppressWarnings("unchecked")
+    void recapTourAvecSortis() throws Exception {
+      TontineMembre sorti = Fixtures.membre(tontine, Fixtures.user("Sorti"), 2);
+      sorti.setStatut(MembreStatut.SORTI);
+      when(membreRepository.findAll(any(Specification.class), eq(page)))
+          .thenReturn(new PageImpl<>(List.of(sorti)));
+      Cotisation c = Fixtures.cotisation(sorti, cycle, CotisationStatut.VALIDE);
+      when(cotisationRepository.findByCycle_IdAndMembre_IdInAndDeletedAtIsNull(
+              eq(cycle.getId()), anyList()))
+          .thenReturn(List.of(c));
+
+      List<CycleRecapCotisationResponse> r =
+          service
+              .getCycleRecap(
+                  gestionnaire.getKeycloakId(), tontine.getId(), cycle.getId(), null, true, page)
+              .getContent();
+
+      assertThat(r).hasSize(1);
+      assertThat(r.get(0).getStatutMembre()).isEqualTo(MembreStatut.SORTI);
+      assertThat(r.get(0).getCotisationId()).isEqualTo(c.getId());
+    }
+  }
+
+  @Nested
   @DisplayName("cotisations par échéance (B32)")
   class ParEcheance {
 
