@@ -605,6 +605,7 @@ class CycleServiceImplTest {
       List<TontineMembre> membres = membresActifs(2);
       CycleTontine c1 = Fixtures.cycle(tontine, 1, CycleStatut.TERMINE);
       CycleTontine c2 = cycleConnu(2, CycleStatut.EN_COURS);
+      c2.setDateFin(LocalDate.now()); // B45 : dernier sous-cycle clôturé le jour de sa fin
       when(cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId()))
           .thenReturn(List.of(c1, c2));
       TontineMembre sorti = Fixtures.membre(tontine, Fixtures.user("Sorti"), 9);
@@ -628,7 +629,8 @@ class CycleServiceImplTest {
 
       CycleResponse r = service.closeCycle(kc, tontine.getId(), c2.getId());
 
-      assertThat(r.getDistributionParMembre()).hasSize(2);
+      // B43 : le membre absent des membres actifs reçoit aussi sa part
+      assertThat(r.getDistributionParMembre()).hasSize(3);
       CycleResponse.MembreDistributionInfo awa =
           r.getDistributionParMembre().stream()
               .filter(d -> d.getMembreId().equals(membres.getFirst().getId()))
@@ -638,12 +640,12 @@ class CycleServiceImplTest {
       // 10 % de 2000 = 200 ; frais fixes : 300 × 2000 / 8000 (cagnotte, sortant compris) = 75
       assertThat(awa.getMontantCommission()).isEqualByComparingTo("275");
       assertThat(awa.getMontantNet()).isEqualByComparingTo("1725");
-      assertThat(r.getMontantJackpot()).isEqualByComparingTo("3000");
+      assertThat(r.getMontantJackpot()).isEqualByComparingTo("8000");
 
       // V034 : une ligne par membre distribué, montants identiques à la réponse
       ArgumentCaptor<List<DistributionEvenementielle>> lignes = ArgumentCaptor.forClass(List.class);
       verify(distributionRepository).saveAll(lignes.capture());
-      assertThat(lignes.getValue()).hasSize(2);
+      assertThat(lignes.getValue()).hasSize(3);
       DistributionEvenementielle ligneAwa =
           lignes.getValue().stream()
               .filter(l -> l.getMontantCotise().compareTo(new BigDecimal("2000")) == 0)
@@ -653,9 +655,9 @@ class CycleServiceImplTest {
       assertThat(ligneAwa.getMontantNet()).isEqualByComparingTo("1725");
       assertThat(ligneAwa.getTontine()).isSameAs(tontine);
       assertThat(ligneAwa.getCycle()).isSameAs(c2);
-      verify(whatsappService, times(2))
+      verify(whatsappService, times(3))
           .sendDistributionFinale(any(), eq(tontine.getNom()), any(), any());
-      verify(notificationService, times(3))
+      verify(notificationService, times(4))
           .notify(
               any(),
               eq(NotificationType.DISTRIBUTION_FINALE),
@@ -671,6 +673,7 @@ class CycleServiceImplTest {
     void distributionSommeExacte() throws Exception {
       List<TontineMembre> membres = membresActifs(3);
       CycleTontine c1 = cycleConnu(1, CycleStatut.EN_COURS);
+      c1.setDateFin(LocalDate.now()); // B45 : dernier sous-cycle clôturé le jour de sa fin
       when(cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId()))
           .thenReturn(List.of(c1));
       when(cotisationRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
@@ -697,6 +700,7 @@ class CycleServiceImplTest {
     void distributionDejaEnregistree() throws Exception {
       List<TontineMembre> membres = membresActifs(1);
       CycleTontine c = cycleConnu(1, CycleStatut.EN_COURS);
+      c.setDateFin(LocalDate.now()); // B45 : dernier sous-cycle clôturé le jour de sa fin
       when(cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId()))
           .thenReturn(List.of(c));
       when(cotisationRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
@@ -716,6 +720,7 @@ class CycleServiceImplTest {
     void finaleVide() throws Exception {
       membresActifs(1);
       CycleTontine c = cycleConnu(1, CycleStatut.EN_COURS);
+      c.setDateFin(LocalDate.now()); // B45 : dernier sous-cycle clôturé le jour de sa fin
       when(cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId()))
           .thenReturn(List.of(c));
       doThrow(new RuntimeException("KO"))
@@ -1404,6 +1409,7 @@ class CycleServiceImplTest {
       tontine.setTontineType(TontineType.EVENEMENTIELLE);
       membresActifs(1);
       CycleTontine dernier = cycleConnu(1, CycleStatut.EN_COURS);
+      dernier.setDateFin(LocalDate.now()); // B45 : dernier sous-cycle clôturé le jour de sa fin
       toursDeLaTontine(dernier);
 
       service.closeCycle(kc, tontine.getId(), dernier.getId());
@@ -1471,6 +1477,220 @@ class CycleServiceImplTest {
 
       verify(cycleRepository, never()).save(any());
       verify(distributionRepository, never()).saveAll(any());
+    }
+  }
+
+  @Nested
+  @DisplayName(
+      "B43 : distribution finale de toutes les cotisations validées, quel que soit le statut")
+  class DistributionTousStatuts {
+
+    @BeforeEach
+    void evenementielle() {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+    }
+
+    @Test
+    @DisplayName("SORTI, SUSPENDU et supprimé reçoivent leur part ; jackpot = total encaissé")
+    void membresNonActifsDistribues() throws Exception {
+      List<TontineMembre> actifs = membresActifs(1);
+      TontineMembre sorti = Fixtures.membre(tontine, Fixtures.user("Sorti"), 2);
+      sorti.setStatut(MembreStatut.SORTI);
+      TontineMembre suspendu = Fixtures.membre(tontine, Fixtures.user("Suspendu"), 3);
+      suspendu.setStatut(MembreStatut.SUSPENDU);
+      TontineMembre supprime = Fixtures.membre(tontine, Fixtures.user("Supprime"), 4);
+      supprime.setStatut(MembreStatut.SORTI);
+      supprime.setDeletedAt(LocalDateTime.now());
+      CycleTontine c = cycleConnu(1, CycleStatut.EN_COURS);
+      c.setDateFin(LocalDate.now());
+      when(cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId()))
+          .thenReturn(List.of(c));
+      when(cotisationRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+              tontine.getId(), CotisationStatut.VALIDE))
+          .thenReturn(
+              List.of(
+                  cotisation(actifs.get(0), c, CotisationStatut.VALIDE, "10000"),
+                  cotisation(sorti, c, CotisationStatut.VALIDE, "22000"),
+                  cotisation(suspendu, c, CotisationStatut.VALIDE, "42000"),
+                  cotisation(supprime, c, CotisationStatut.VALIDE, "30000")));
+      when(commissionRepository.findByTontine_IdAndDeletedAtIsNull(tontine.getId()))
+          .thenReturn(List.of(commission(CommissionType.POURCENTAGE_JACKPOT, "10")));
+
+      CycleResponse r = service.closeCycle(kc, tontine.getId(), c.getId());
+
+      assertThat(r.getDistributionParMembre())
+          .extracting(CycleResponse.MembreDistributionInfo::getMembreId)
+          .containsExactlyInAnyOrder(
+              actifs.get(0).getId(), sorti.getId(), suspendu.getId(), supprime.getId());
+      assertThat(r.getMontantJackpot()).isEqualByComparingTo("104000");
+      assertThat(r.getMontantCommission()).isEqualByComparingTo("10400");
+      assertThat(r.getMontantNet()).isEqualByComparingTo("93600");
+      CycleResponse.MembreDistributionInfo partSorti =
+          r.getDistributionParMembre().stream()
+              .filter(d -> d.getMembreId().equals(sorti.getId()))
+              .findFirst()
+              .orElseThrow();
+      assertThat(partSorti.getMontantCommission()).isEqualByComparingTo("2200");
+      assertThat(partSorti.getMontantNet()).isEqualByComparingTo("19800");
+      ArgumentCaptor<List<DistributionEvenementielle>> lignes = ArgumentCaptor.forClass(List.class);
+      verify(distributionRepository).saveAll(lignes.capture());
+      assertThat(lignes.getValue()).hasSize(4);
+      verify(whatsappService, times(4)).sendDistributionFinale(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("clôture anticipée (distribuerMaintenant) : même règle")
+    void distribuerMaintenantTousStatuts() {
+      List<TontineMembre> actifs = membresActifs(1);
+      TontineMembre sorti = Fixtures.membre(tontine, Fixtures.user("Sorti"), 2);
+      sorti.setStatut(MembreStatut.SORTI);
+      CycleTontine enCours = Fixtures.cycle(tontine, 1, CycleStatut.EN_COURS);
+      CycleTontine aVenir = Fixtures.cycle(tontine, 2, CycleStatut.EN_ATTENTE);
+      when(cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId()))
+          .thenReturn(List.of(enCours, aVenir), List.of(enCours));
+      when(cotisationRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+              tontine.getId(), CotisationStatut.VALIDE))
+          .thenReturn(
+              List.of(
+                  cotisation(actifs.get(0), enCours, CotisationStatut.VALIDE, "2000"),
+                  cotisation(sorti, enCours, CotisationStatut.VALIDE, "4000")));
+
+      service.distribuerMaintenant(gestionnaire, tontine);
+
+      assertThat(enCours.getMontantJackpot()).isEqualByComparingTo("6000");
+      ArgumentCaptor<List<DistributionEvenementielle>> lignes = ArgumentCaptor.forClass(List.class);
+      verify(distributionRepository).saveAll(lignes.capture());
+      assertThat(lignes.getValue()).hasSize(2);
+    }
+  }
+
+  @Nested
+  @DisplayName("B45 : garde-fou de date à la clôture d'un tour")
+  class GardeFouDate {
+
+    private CycleTontine tourDu(int numero, LocalDate debut, LocalDate fin) {
+      CycleTontine c = cycleConnu(numero, CycleStatut.EN_COURS);
+      c.setDateDebut(debut);
+      c.setDateFin(fin);
+      return c;
+    }
+
+    private void tousPayes(boolean valeur) {
+      lenient()
+          .when(suiviTour.etat(any()))
+          .thenReturn(new EtatTour(1, 1, null, valeur, null, null, 0, 0));
+    }
+
+    @Test
+    @DisplayName("rotative : tour pas encore commencé, paiements incomplets → TOUR_NON_COMMENCE")
+    void rotativeNonCommencee() {
+      membresActifs(2);
+      CycleTontine tour = tourDu(2, LocalDate.now().plusDays(1), LocalDate.now().plusDays(30));
+      tousPayes(false);
+
+      assertThatThrownBy(() -> service.closeCycle(kc, tontine.getId(), tour.getId()))
+          .isInstanceOf(BadRequestException.class)
+          .satisfies(
+              e ->
+                  assertThat(((CustomException) e).getCode())
+                      .isEqualTo(ErrorCode.TOUR_NON_COMMENCE));
+      assertThat(tour.getStatut()).isEqualTo(CycleStatut.EN_COURS);
+    }
+
+    @Test
+    @DisplayName("rotative : tour pas encore commencé mais tous ont payé → remise permise")
+    void rotativeNonCommenceeTousPayes() throws Exception {
+      membresActifs(2);
+      CycleTontine tour = tourDu(2, LocalDate.now().plusDays(1), LocalDate.now().plusDays(30));
+      tousPayes(true);
+
+      service.closeCycle(kc, tontine.getId(), tour.getId());
+
+      assertThat(tour.getStatut()).isEqualTo(CycleStatut.TERMINE);
+    }
+
+    @Test
+    @DisplayName("rotative TOUS_PAYES AUTOMATIQUE : remise automatique d'un tour pas commencé")
+    void remiseAutomatiqueAvantLeDebut() throws Exception {
+      tontine.setDeclenchementJackpot(DeclenchementJackpot.TOUS_PAYES);
+      tontine.setModeCycle(ModeCycle.AUTOMATIQUE);
+      membresActifs(2);
+      CycleTontine tour = tourDu(2, LocalDate.now().plusDays(1), LocalDate.now().plusDays(30));
+      tousPayes(true);
+
+      assertThat(service.remettreSiTousPayes(kc, tontine.getId(), tour.getId())).isPresent();
+      assertThat(tour.getStatut()).isEqualTo(CycleStatut.TERMINE);
+    }
+
+    @Test
+    @DisplayName("rotative : tour commencé, avant son échéance, paiements incomplets → permise")
+    void rotativeAvantEcheance() throws Exception {
+      membresActifs(2);
+      CycleTontine tour = tourDu(1, LocalDate.now(), LocalDate.now().plusDays(30));
+      tousPayes(false);
+
+      service.closeCycle(kc, tontine.getId(), tour.getId());
+
+      assertThat(tour.getStatut()).isEqualTo(CycleStatut.TERMINE);
+    }
+
+    @Test
+    @DisplayName("événementielle : sous-cycle intermédiaire pas commencé → TOUR_NON_COMMENCE")
+    void evenementielleNonCommencee() {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      CycleTontine demain = tourDu(2, LocalDate.now().plusDays(1), LocalDate.now().plusDays(1));
+      CycleTontine apres = Fixtures.cycle(tontine, 3, CycleStatut.EN_ATTENTE);
+      lenient()
+          .when(
+              cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(
+                  tontine.getId()))
+          .thenReturn(List.of(demain, apres));
+
+      assertThatThrownBy(() -> service.closeCycle(kc, tontine.getId(), demain.getId()))
+          .isInstanceOf(BadRequestException.class)
+          .satisfies(
+              e ->
+                  assertThat(((CustomException) e).getCode())
+                      .isEqualTo(ErrorCode.TOUR_NON_COMMENCE));
+    }
+
+    @Test
+    @DisplayName("événementielle : dernier sous-cycle avant son jour → CLOTURE_FINALE_PREMATUREE")
+    void evenementielleFinalePrematuree() {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      CycleTontine dernier = tourDu(4, LocalDate.now(), LocalDate.now().plusDays(6));
+      lenient()
+          .when(
+              cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(
+                  tontine.getId()))
+          .thenReturn(List.of(dernier));
+
+      assertThatThrownBy(() -> service.closeCycle(kc, tontine.getId(), dernier.getId()))
+          .isInstanceOf(BadRequestException.class)
+          .hasMessageContaining("Clôturer la tontine")
+          .satisfies(
+              e ->
+                  assertThat(((CustomException) e).getCode())
+                      .isEqualTo(ErrorCode.CLOTURE_FINALE_PREMATUREE));
+      verify(distributionRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("événementielle : dernier sous-cycle le jour de sa fin → distribution finale")
+    void evenementielleFinaleLeJour() throws Exception {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      membresActifs(1);
+      CycleTontine dernier = tourDu(4, LocalDate.now().minusDays(6), LocalDate.now());
+      lenient()
+          .when(
+              cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(
+                  tontine.getId()))
+          .thenReturn(List.of(dernier));
+
+      assertThat(
+              service.closeCycle(kc, tontine.getId(), dernier.getId()).getDistributionParMembre())
+          .isNotNull();
+      assertThat(dernier.getStatut()).isEqualTo(CycleStatut.TERMINE);
     }
   }
 }

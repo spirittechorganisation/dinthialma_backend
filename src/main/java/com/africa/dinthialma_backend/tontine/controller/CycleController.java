@@ -297,13 +297,26 @@ public class CycleController {
               + "**Option de remise (B33)** : corps facultatif `modeRemise`, sinon le réglage de"
               + " la tontine. `ATTENDRE` avec un jackpot incomplet → 409"
               + " `REMISE_JACKPOT_INCOMPLETE` ; `CAISSE`, ou `AVANCE_COMMISSION` quand la"
-              + " commission ne couvre pas le manque → 400 `MODE_REMISE_INDISPONIBLE`.")
+              + " commission ne couvre pas le manque → 400 `MODE_REMISE_INDISPONIBLE`.\n\n"
+              + "**Garde-fou de date (B45, heure de Dakar)** : tour dont la `dateDebut` n'est pas"
+              + " atteinte → 400 `TOUR_NON_COMMENCE`, sauf en rotative quand tous les membres"
+              + " actifs ont déjà payé toutes les échéances du tour (remise anticipée). Une"
+              + " rotative commencée se clôture toujours avant son échéance. Événementielle : le"
+              + " dernier sous-cycle (distribution finale, irréversible) ne se clôture pas avant"
+              + " sa `dateFin` → 400 `CLOTURE_FINALE_PREMATUREE` ; fin anticipée par"
+              + " `PUT /v1/tontines/{id}/cloturer` avec `forcer`.\n\n"
+              + "**Distribution finale (B43)** : chaque membre ayant des cotisations VALIDÉES"
+              + " reçoit sa part, quel que soit son statut (SORTI, SUSPENDU, retiré).")
   @ApiResponses({
     @ApiResponse(
         responseCode = "200",
         description = "Cycle clôturé avec jackpot calculé",
         content = @Content(schema = @Schema(implementation = CycleResponse.class))),
-    @ApiResponse(responseCode = "400", description = "Cycle pas EN_COURS"),
+    @ApiResponse(
+        responseCode = "400",
+        description =
+            "Cycle pas EN_COURS, `TOUR_NON_COMMENCE`, `CLOTURE_FINALE_PREMATUREE`,"
+                + " `MODE_REMISE_INDISPONIBLE`"),
     @ApiResponse(responseCode = "401", description = "JWT manquant ou expiré"),
     @ApiResponse(responseCode = "403", description = "Accès interdit"),
     @ApiResponse(responseCode = "404", description = "Tontine ou cycle introuvable"),
