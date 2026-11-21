@@ -6,7 +6,6 @@ import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -147,10 +146,12 @@ public class CreateTontineRequest {
   private ModeCycle modeCycle;
 
   @Schema(
-      description = "Date de démarrage du premier cycle (aujourd'hui ou dans le futur)",
-      example = "2024-07-01")
+      description =
+          "Date de démarrage du premier cycle : aujourd'hui ou dans le futur, heure de Dakar"
+              + " (sinon 400 DATE_DEBUT_PASSEE). Elle doit l'être encore à l'activation qui génère"
+              + " les tours.",
+      example = "2026-12-01")
   @NotNull
-  @FutureOrPresent
   private LocalDate dateDebut;
 
   @Schema(
