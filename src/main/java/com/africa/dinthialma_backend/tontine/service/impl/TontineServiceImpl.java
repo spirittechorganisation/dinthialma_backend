@@ -44,8 +44,10 @@ import com.africa.dinthialma_backend.tontine.repository.TontineSpecifications;
 import com.africa.dinthialma_backend.tontine.service.interfaces.CommissionService;
 import com.africa.dinthialma_backend.tontine.service.interfaces.TontineService;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -79,6 +81,7 @@ public class TontineServiceImpl implements TontineService {
   private final AuditService auditService;
   private final NotificationService notificationService;
   private final CommissionService commissionService;
+  private final Clock horloge;
 
   /** Rappel par défaut N heures avant l'échéance (B26). */
   private static final int RAPPEL_HEURES_AVANT_PAR_DEFAUT = 3;
@@ -93,6 +96,7 @@ public class TontineServiceImpl implements TontineService {
     TontineType type =
         request.getTontineType() != null ? request.getTontineType() : TontineType.ROTATIVE;
 
+    verifierDateDebut(request.getDateDebut());
     validateCreateRequest(request, type);
     Rythme rythme =
         Rythme.resoudre(
@@ -338,6 +342,9 @@ public class TontineServiceImpl implements TontineService {
 
   private void appliquerChampsCommuns(User caller, Tontine tontine, UpdateTontineRequest request)
       throws CustomException {
+    if (request.getDateDebut() != null) {
+      verifierDateDebut(request.getDateDebut());
+    }
     String nom = request.getNom() != null ? request.getNom().trim() : null;
     modifier(caller, tontine, "nom", tontine.getNom(), nom, String::valueOf, tontine::setNom);
     modifier(
@@ -574,14 +581,20 @@ public class TontineServiceImpl implements TontineService {
     }
 
     String oldStatut = tontine.getStatut().name();
+    boolean genererTours =
+        (tontine.getTontineType() == TontineType.EVENEMENTIELLE
+                || tontine.getModeCycle() == ModeCycle.AUTOMATIQUE)
+            && !cycleRepository.existsByTontine_IdAndDeletedAtIsNull(id);
+    if (genererTours) {
+      // B46 : les tours partent de dateDebut ; devenue passée depuis la création, elle ferait
+      // démarrer le premier tour dans le passé
+      verifierDateDebut(tontine.getDateDebut());
+    }
     tontine.setStatut(TontineStatut.ACTIVE);
 
-    if (tontine.getTontineType() == TontineType.EVENEMENTIELLE) {
-      if (!cycleRepository.existsByTontine_IdAndDeletedAtIsNull(id)) {
-        generateEvenementielleSubCycles(tontine);
-      }
-    } else if (tontine.getModeCycle() == ModeCycle.AUTOMATIQUE
-        && !cycleRepository.existsByTontine_IdAndDeletedAtIsNull(id)) {
+    if (genererTours && tontine.getTontineType() == TontineType.EVENEMENTIELLE) {
+      generateEvenementielleSubCycles(tontine);
+    } else if (genererTours) {
       generateCycles(tontine);
     }
 
@@ -740,6 +753,20 @@ public class TontineServiceImpl implements TontineService {
     }
     if (request.getModeCycle() == null) {
       throw new BadRequestException("Le mode de cycle est obligatoire pour une tontine rotative");
+    }
+  }
+
+  /**
+   * Date de début aujourd'hui ou future, heure de Dakar (B46) : création, modification et
+   * activation qui génère les tours. Une reprise de tontine déjà commencée relèvera de B41.
+   */
+  private void verifierDateDebut(LocalDate dateDebut) throws CustomException {
+    if (dateDebut != null && dateDebut.isBefore(LocalDate.now(horloge))) {
+      throw new BadRequestException(
+          "La date de début ("
+              + DateTimeFormatter.ofPattern("dd/MM/yyyy").format(dateDebut)
+              + ") est passée : choisissez aujourd'hui ou une date future, puis réessayez",
+          ErrorCode.DATE_DEBUT_PASSEE);
     }
   }
 

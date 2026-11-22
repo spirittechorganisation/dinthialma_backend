@@ -113,7 +113,11 @@ public class UpdateTontineRequest {
       example = "HYBRIDE")
   private String ordreBeneficiaire;
 
-  @Schema(description = "Nouvelle date de démarrage (null = inchangée)", example = "2024-08-01")
+  @Schema(
+      description =
+          "Nouvelle date de démarrage, aujourd'hui ou future (null = inchangée ; passée → 400"
+              + " DATE_DEBUT_PASSEE)",
+      example = "2026-12-01")
   private LocalDate dateDebut;
 
   @Schema(

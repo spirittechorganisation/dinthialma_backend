@@ -284,26 +284,39 @@ class DomaineEtAdministrationIT extends AbstractIntegrationTest {
                 .asText())
         .isEqualTo("EN_COURS");
 
-    valider(g.jeton(), tid, donnees.declarer(m.jeton(), tid, c2, 500));
-    JsonNode finale = cloturer(g.jeton(), tid, c2);
-    JsonNode distribution = finale.path("distributionParMembre");
-    assertThat(distribution).hasSize(1);
-    assertThat(distribution.get(0).path("montantCotise").asDouble()).isEqualTo(1000);
-    assertThat(distribution.get(0).path("montantNet").asDouble()).isEqualTo(1000);
+    // B47 : le sous-cycle 2 (demain) est EN_COURS mais ne se paie pas d'avance
+    assertThat(
+            api.post(
+                    "/v1/tontines/" + tid + "/cotisations",
+                    m.jeton(),
+                    Map.of("cycleId", c2, "montant", 500))
+                .code())
+        .isEqualTo("ECHEANCE_NON_OUVERTE");
+    // B45 : le dernier sous-cycle (demain) ne se clôture pas avant son jour ; la fin anticipée
+    // passe par la clôture forcée de la tontine, qui fait la distribution finale
+    assertThat(
+            api.put("/v1/tontines/" + tid + "/cycles/" + c2 + "/cloturer", g.jeton(), null).code())
+        .isEqualTo("TOUR_NON_COMMENCE");
+    TestDataFactory.attendre(
+        api.put("/v1/tontines/" + tid + "/cloturer", g.jeton(), Map.of("forcer", true)), 200);
+    JsonNode finale = api.get("/v1/tontines/" + tid + "/cycles/" + c2, g.jeton()).data();
+    assertThat(finale.path("statut").asText()).isEqualTo("TERMINE");
+    assertThat(finale.path("montantJackpot").asDouble()).isEqualTo(500);
+    assertThat(finale.path("montantNet").asDouble()).isEqualTo(500);
 
     // V034 : la distribution est conservée dans l'historique du membre
     JsonNode ligne = api.get("/v1/me/summary", m.jeton()).data();
-    assertThat(ligne.path("totalJackpotsRecus").asDouble()).isEqualTo(1000);
-    assertThat(ligne.path("tontines").get(0).path("totalJackpotsRecus").asDouble()).isEqualTo(1000);
+    assertThat(ligne.path("totalJackpotsRecus").asDouble()).isEqualTo(500);
+    assertThat(ligne.path("tontines").get(0).path("totalJackpotsRecus").asDouble()).isEqualTo(500);
     assertThat(ligne.path("tontines").get(0).path("nombreJackpotsRecus").asLong()).isEqualTo(1);
     JsonNode recu = api.get("/v1/me/jackpots", m.jeton()).data().path("recus").get(0);
     assertThat(recu.path("nature").asText()).isEqualTo("DISTRIBUTION_FINALE");
-    assertThat(recu.path("montantRecu").asDouble()).isEqualTo(1000);
+    assertThat(recu.path("montantRecu").asDouble()).isEqualTo(500);
     assertThat(recu.path("cycleId").asText()).isEqualTo(c2);
     JsonNode activite =
         api.get("/v1/me/activite?type=DISTRIBUTION_RECUE", m.jeton()).data().path("content");
     assertThat(activite).hasSize(1);
-    assertThat(activite.get(0).path("montant").asDouble()).isEqualTo(1000);
+    assertThat(activite.get(0).path("montant").asDouble()).isEqualTo(500);
     assertThat(activite.get(0).path("sens").asText()).isEqualTo("GAIN");
     assertThat(activite.get(0).path("libelle").asText())
         .isEqualTo("Distribution finale Tabaski test");

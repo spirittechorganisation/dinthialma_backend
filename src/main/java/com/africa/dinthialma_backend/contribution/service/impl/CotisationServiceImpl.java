@@ -34,6 +34,7 @@ import com.africa.dinthialma_backend.contribution.service.interfaces.CotisationS
 import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import com.africa.dinthialma_backend.member.entity.TontineMembre;
 import com.africa.dinthialma_backend.member.repository.TontineMembreRepository;
+import com.africa.dinthialma_backend.member.repository.TontineMembreSpecifications;
 import com.africa.dinthialma_backend.notification.codeList.NotificationType;
 import com.africa.dinthialma_backend.notification.dto.NotificationLiens;
 import com.africa.dinthialma_backend.notification.service.WhatsappService;
@@ -52,6 +53,7 @@ import com.africa.dinthialma_backend.tontine.service.interfaces.CycleService;
 import com.africa.dinthialma_backend.tontine.service.interfaces.RemiseService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -103,6 +105,7 @@ public class CotisationServiceImpl implements CotisationService {
             .findByTontine_IdAndUser_IdAndDeletedAtIsNull(tontineId, caller.getId())
             .orElseThrow(
                 () -> new ForbiddenException("Vous n'êtes pas cotisant dans cette tontine"));
+    verifierMembreActif(membre, true);
 
     CycleTontine cycle = findCycleById(tontineId, request.getCycleId());
 
@@ -222,6 +225,7 @@ public class CotisationServiceImpl implements CotisationService {
         membreRepository
             .findByIdAndTontine_IdAndDeletedAtIsNull(request.getMembreId(), tontineId)
             .orElseThrow(() -> new NotFoundException("Membre introuvable dans cette tontine"));
+    verifierMembreActif(membre, false);
 
     CycleTontine cycle = findCycleById(tontineId, request.getCycleId());
 
@@ -786,6 +790,19 @@ public class CotisationServiceImpl implements CotisationService {
   public Page<CycleRecapCotisationResponse> getCycleRecap(
       String keycloakId, UUID tontineId, UUID cycleId, UUID echeanceId, Pageable pageable)
       throws CustomException {
+    return getCycleRecap(keycloakId, tontineId, cycleId, echeanceId, false, pageable);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Page<CycleRecapCotisationResponse> getCycleRecap(
+      String keycloakId,
+      UUID tontineId,
+      UUID cycleId,
+      UUID echeanceId,
+      boolean inclureSortis,
+      Pageable pageable)
+      throws CustomException {
 
     User caller = findUserByKeycloakId(keycloakId);
     Tontine tontine = findTontineById(tontineId);
@@ -808,8 +825,7 @@ public class CotisationServiceImpl implements CotisationService {
                             ErrorCode.ECHEANCE_INTROUVABLE));
 
     Page<TontineMembre> membres =
-        membreRepository.findByTontine_IdAndStatutNotAndDeletedAtIsNull(
-            tontineId, MembreStatut.SORTI, pageable);
+        membresDuRecap(tontineId, inclureSortis, cycleId, STATUTS_COTISATION_DU_TOUR, pageable);
     if (membres.isEmpty()) {
       return membres.map(m -> cotisationMapper.toRecap(m, null));
     }
@@ -847,14 +863,21 @@ public class CotisationServiceImpl implements CotisationService {
   @Transactional(readOnly = true)
   public Page<MembreTotalCotisationResponse> getTontineRecapTotal(
       String keycloakId, UUID tontineId, Pageable pageable) throws CustomException {
+    return getTontineRecapTotal(keycloakId, tontineId, false, pageable);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Page<MembreTotalCotisationResponse> getTontineRecapTotal(
+      String keycloakId, UUID tontineId, boolean inclureSortis, Pageable pageable)
+      throws CustomException {
 
     User caller = findUserByKeycloakId(keycloakId);
     Tontine tontine = findTontineById(tontineId);
     assertIsCreatorOrSuperAdmin(caller, tontine);
 
     Page<TontineMembre> membres =
-        membreRepository.findByTontine_IdAndStatutNotAndDeletedAtIsNull(
-            tontineId, MembreStatut.SORTI, pageable);
+        membresDuRecap(tontineId, inclureSortis, null, List.of(CotisationStatut.VALIDE), pageable);
     if (membres.isEmpty()) {
       return membres.map(m -> cotisationMapper.toTotal(m, BigDecimal.ZERO, 0L));
     }
@@ -874,6 +897,32 @@ public class CotisationServiceImpl implements CotisationService {
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
+
+  /** Cotisations qui font apparaître un membre SORTI dans le récap d'un tour (B48). */
+  private static final List<CotisationStatut> STATUTS_COTISATION_DU_TOUR =
+      List.of(CotisationStatut.EN_ATTENTE, CotisationStatut.VALIDE, CotisationStatut.EN_RETARD);
+
+  /**
+   * Membres d'un récapitulatif : membres non SORTI (historique) ; avec {@code inclureSortis} (B48),
+   * plus les SORTI ayant une cotisation de ces statuts (sur le cycle, ou toute la tontine si null).
+   * Membres retirés (suppression logique) toujours exclus.
+   */
+  private Page<TontineMembre> membresDuRecap(
+      UUID tontineId,
+      boolean inclureSortis,
+      UUID cycleId,
+      List<CotisationStatut> statuts,
+      Pageable pageable) {
+    if (!inclureSortis) {
+      return membreRepository.findByTontine_IdAndStatutNotAndDeletedAtIsNull(
+          tontineId, MembreStatut.SORTI, pageable);
+    }
+    return membreRepository.findAll(
+        Specification.allOf(
+            TontineMembreSpecifications.deTontine(tontineId),
+            TontineMembreSpecifications.horsSortisSaufCotisants(cycleId, statuts)),
+        pageable);
+  }
 
   /**
    * Échéance payée (B32) : celle désignée (régularisation d'une échéance passée), sinon l'échéance
@@ -921,12 +970,25 @@ public class CotisationServiceImpl implements CotisationService {
 
   /**
    * Un paiement est accepté sur un tour EN_COURS, ou sur un tour TERMINE pour régulariser un retard
-   * (B33), sauf une fois la distribution finale d'une tontine événementielle faite.
+   * (B33), sauf une fois la distribution finale d'une tontine événementielle faite, et pas sur un
+   * sous-cycle événementiel pas encore commencé (B47).
    */
   private void verifierTourPayable(Tontine tontine, CycleTontine cycle) throws CustomException {
     if (cycle.getStatut() == CycleStatut.EN_ATTENTE) {
       throw new BadRequestException(
           "Ce tour n'est pas encore ouvert aux cotisations", ErrorCode.NO_CYCLE_IN_PROGRESS);
+    }
+    // B47 : un sous-cycle événementiel ouvert par la clôture du précédent ne se paie qu'à partir
+    // de son premier jour (heure de Dakar). Les rotatives gardent le paiement d'avance, qui permet
+    // la remise anticipée quand tous ont payé (B45).
+    if (tontine.getTontineType() == TontineType.EVENEMENTIELLE
+        && cycle.getDateDebut() != null
+        && cycle.getDateDebut().isAfter(Fuseau.maintenant().toLocalDate())) {
+      throw new BadRequestException(
+          "Cette période commence le "
+              + DateTimeFormatter.ofPattern("dd/MM/yyyy").format(cycle.getDateDebut())
+              + " : elle ne peut pas encore être payée",
+          ErrorCode.ECHEANCE_NON_OUVERTE);
     }
     if (cycle.getStatut() == CycleStatut.TERMINE
         && tontine.getTontineType() == TontineType.EVENEMENTIELLE
@@ -935,6 +997,28 @@ public class CotisationServiceImpl implements CotisationService {
           "La distribution finale est faite : cette tontine n'accepte plus de cotisation",
           ErrorCode.REGULARISATION_IMPOSSIBLE);
     }
+  }
+
+  /**
+   * Nouvelle cotisation (déclaration ou saisie, y compris la régularisation d'un tour remis) :
+   * réservée aux membres ACTIF (B44). Les cotisations déjà enregistrées d'un membre suspendu ou
+   * sorti entre-temps restent validables, refusables et corrigeables : l'argent a été remis avant.
+   */
+  private static void verifierMembreActif(TontineMembre membre, boolean parLeMembre)
+      throws CustomException {
+    if (membre.getStatut() == MembreStatut.ACTIF) {
+      return;
+    }
+    String etat = membre.getStatut() == MembreStatut.SUSPENDU ? "suspendue" : "terminée";
+    throw new BadRequestException(
+        parLeMembre
+            ? "Votre participation à cette tontine est "
+                + etat
+                + " : vous ne pouvez pas enregistrer de cotisation"
+            : "La participation de ce membre est "
+                + etat
+                + " : réactivez-le avant d'enregistrer une cotisation",
+        ErrorCode.MEMBRE_INACTIF);
   }
 
   /** Statuts qu'un gestionnaire peut encore valider ou refuser (EN_RETARD depuis B33). */

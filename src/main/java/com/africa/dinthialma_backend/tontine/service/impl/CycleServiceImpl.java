@@ -60,6 +60,7 @@ import com.africa.dinthialma_backend.tontine.service.interfaces.CycleService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -83,6 +84,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional
 public class CycleServiceImpl implements CycleService {
+
+  private static final DateTimeFormatter JOUR = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
   private final CycleTontineRepository cycleRepository;
   private final CycleMapper cycleMapper;
@@ -263,6 +266,7 @@ public class CycleServiceImpl implements CycleService {
     if (cycle.getStatut() != CycleStatut.EN_COURS) {
       throw new BadRequestException("Seul un cycle EN_COURS peut être clôturé");
     }
+    verifierDateCloture(tontine, cycle);
 
     CycleResponse reponse;
     if (tontine.getTontineType() == TontineType.EVENEMENTIELLE) {
@@ -276,6 +280,56 @@ public class CycleServiceImpl implements CycleService {
     }
     suggererCloture(tontine);
     return reponse;
+  }
+
+  /**
+   * Garde-fou de date (B45, heure de Dakar).
+   *
+   * <ul>
+   *   <li>tour pas encore commencé : refusé ({@code TOUR_NON_COMMENCE}), sauf en rotative quand
+   *       tous les membres actifs ont déjà payé toutes les échéances du tour (remise anticipée,
+   *       B32) ;
+   *   <li>dernier sous-cycle d'une événementielle : refusé avant son dernier jour ({@code
+   *       CLOTURE_FINALE_PREMATUREE}), la distribution finale étant irréversible ; la fin anticipée
+   *       passe par la clôture de la tontine (confirmation {@code forcer}).
+   * </ul>
+   *
+   * Une rotative commencée se clôture toujours avant son échéance (remise anticipée, options B33).
+   */
+  private void verifierDateCloture(Tontine tontine, CycleTontine cycle) throws CustomException {
+    LocalDate aujourdHui = Fuseau.maintenant().toLocalDate();
+    boolean commence = !cycle.getDateDebut().isAfter(aujourdHui);
+    if (tontine.getTontineType() == TontineType.ROTATIVE) {
+      if (!commence && !suiviTour.etat(cycle).tousPayes()) {
+        throw new BadRequestException(
+            "Ce tour commence le "
+                + JOUR.format(cycle.getDateDebut())
+                + " : il ne peut pas être clôturé avant, sauf si tous les membres ont déjà payé",
+            ErrorCode.TOUR_NON_COMMENCE);
+      }
+      return;
+    }
+    if (!commence) {
+      throw new BadRequestException(
+          "Ce sous-cycle commence le "
+              + JOUR.format(cycle.getDateDebut())
+              + " : il ne peut pas être clôturé avant",
+          ErrorCode.TOUR_NON_COMMENCE);
+    }
+    boolean dernier =
+        cycleRepository
+            .findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId())
+            .stream()
+            .noneMatch(c -> c.getStatut() == CycleStatut.EN_ATTENTE);
+    if (dernier && cycle.getDateFin() != null && cycle.getDateFin().isAfter(aujourdHui)) {
+      throw new BadRequestException(
+          "C'est le dernier sous-cycle : sa clôture fait la distribution finale, qui ne peut pas"
+              + " être faite avant le "
+              + JOUR.format(cycle.getDateFin())
+              + ". Pour arrêter la tontine plus tôt, utilisez « Clôturer la tontine » (une"
+              + " confirmation vous sera demandée).",
+          ErrorCode.CLOTURE_FINALE_PREMATUREE);
+    }
   }
 
   // ─── Clôture de la tontine (B33) ─────────────────────────────────────────
@@ -550,10 +604,7 @@ public class CycleServiceImpl implements CycleService {
       // Clôture finale : calcul de la distribution totale par membre
       List<TontineCommission> commissions =
           commissionRepository.findByTontine_IdAndDeletedAtIsNull(tontineId);
-      List<TontineMembre> membres =
-          membreRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
-              tontineId, MembreStatut.ACTIF);
-      distribution = computeFinalDistribution(tontineId, commissions, membres);
+      distribution = computeFinalDistribution(tontineId, commissions);
 
       if (!distribution.isEmpty()) {
         BigDecimal totalCagnotte =
@@ -627,18 +678,23 @@ public class CycleServiceImpl implements CycleService {
    * Calcule la distribution finale par membre sur l'ensemble des cycles d'une tontine
    * événementielle.
    *
-   * <p>Pour chaque membre : montantNet = somme cotisations VALIDEES - quote-part commission. La
-   * commission POURCENTAGE_JACKPOT est distribuée proportionnellement. La FRAIS_FIXES_PAR_CYCLE est
-   * répartie proportionnellement à la mise. FRAIS_ADHESION est exclue du calcul de jackpot.
+   * <p>Pour chaque membre ayant au moins une cotisation VALIDE (tout statut, B43) : montantNet =
+   * somme cotisations VALIDEES - quote-part commission. La commission POURCENTAGE_JACKPOT est
+   * distribuée proportionnellement. La FRAIS_FIXES_PAR_CYCLE est répartie proportionnellement à la
+   * mise. FRAIS_ADHESION est exclue du calcul de jackpot.
    */
   private List<MembreDistributionInfo> computeFinalDistribution(
-      UUID tontineId, List<TontineCommission> commissions, List<TontineMembre> membres) {
+      UUID tontineId, List<TontineCommission> commissions) {
 
+    // B43 : chaque cotisation VALIDE revient à son membre, quel que soit son statut (SORTI,
+    // SUSPENDU) ou sa suppression logique : le membre est lu sur la cotisation elle-même.
     Map<UUID, BigDecimal> totalParMembre = new LinkedHashMap<>();
+    Map<UUID, TontineMembre> membreMap = new LinkedHashMap<>();
     for (Cotisation c :
         cotisationRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
             tontineId, CotisationStatut.VALIDE)) {
       totalParMembre.merge(c.getMembre().getId(), c.getMontant(), BigDecimal::add);
+      membreMap.putIfAbsent(c.getMembre().getId(), c.getMembre());
     }
     if (totalParMembre.isEmpty()) return List.of();
 
@@ -648,12 +704,9 @@ public class CycleServiceImpl implements CycleService {
     List<BigDecimal> commissionsParMembre =
         Montants.repartirAuProrata(commissionTotale(commissions, totalCagnotte), mises);
 
-    Map<UUID, TontineMembre> membreMap =
-        membres.stream().collect(Collectors.toMap(TontineMembre::getId, m -> m));
     List<MembreDistributionInfo> result = new ArrayList<>();
     for (int i = 0; i < membreIds.size(); i++) {
       TontineMembre m = membreMap.get(membreIds.get(i));
-      if (m == null) continue;
       result.add(
           MembreDistributionInfo.builder()
               .membreId(m.getId())

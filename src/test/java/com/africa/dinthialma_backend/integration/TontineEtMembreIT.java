@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.africa.dinthialma_backend.support.AbstractIntegrationTest;
 import com.africa.dinthialma_backend.support.TestDataFactory.TontineEnCours;
 import com.africa.dinthialma_backend.support.TestDataFactory.Utilisateur;
+import com.africa.dinthialma_backend.tontine.entity.Tontine;
+import com.africa.dinthialma_backend.tontine.repository.TontineRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -18,6 +20,7 @@ import java.util.UUID;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Relation de l'appelant avec une tontine (B01), recherche et filtres serveur (B11), membres à
@@ -25,6 +28,8 @@ import org.junit.jupiter.api.Test;
  */
 @DisplayName("Tontines, membres et jackpots")
 class TontineEtMembreIT extends AbstractIntegrationTest {
+
+  @Autowired private TontineRepository tontineRepository;
 
   private static List<String> noms(JsonNode page) {
     return StreamSupport.stream(page.path("content").spliterator(), false)
@@ -363,5 +368,60 @@ class TontineEtMembreIT extends AbstractIntegrationTest {
         .filter(x -> x.path("tontineId").asText().equals(tontineId))
         .findFirst()
         .orElseThrow();
+  }
+
+  @Test
+  @DisplayName(
+      "B46 : date de début passée refusée (DATE_DEBUT_PASSEE) à la création, à la modification et"
+          + " à l'activation tardive")
+  void dateDebutPassee() {
+    Utilisateur g = donnees.inscrire("Gestionnaire");
+    LocalDate aujourdHui = LocalDate.now();
+    LocalDate cahier = aujourdHui.minusDays(20);
+    Map<String, Object> evenementielle =
+        Map.of(
+            "tontineType",
+            "EVENEMENTIELLE",
+            "rythmeIntervalle",
+            1,
+            "rythmeUnite",
+            "JOUR",
+            "montant",
+            2000,
+            "dateEcheance",
+            aujourdHui.plusDays(40).toString());
+
+    Map<String, Object> passee = new HashMap<>(corpsTontine("Cahier passé", evenementielle));
+    passee.put("dateDebut", cahier.toString());
+    var creation = api.post("/v1/tontines", g.jeton(), passee);
+    assertThat(creation.statut()).isEqualTo(400);
+    assertThat(creation.code()).isEqualTo("DATE_DEBUT_PASSEE");
+
+    Map<String, Object> corps = new HashMap<>(evenementielle);
+    corps.put("dateDebut", aujourdHui.toString());
+    String tid = donnees.creerTontine(g.jeton(), "Cahier repris", corps).path("id").asText();
+    var modification =
+        api.put("/v1/tontines/" + tid, g.jeton(), Map.of("dateDebut", cahier.toString()));
+    assertThat(modification.statut()).isEqualTo(400);
+    assertThat(modification.code()).isEqualTo("DATE_DEBUT_PASSEE");
+    assertThat(api.get("/v1/tontines/" + tid, g.jeton()).data().path("dateDebut").asText())
+        .isEqualTo(aujourdHui.toString());
+
+    // Activation tardive : la date est devenue passée depuis la création (simulée en base)
+    Tontine tontine = tontineRepository.findById(UUID.fromString(tid)).orElseThrow();
+    tontine.setDateDebut(aujourdHui.minusDays(1));
+    tontineRepository.save(tontine);
+    var activation = api.put("/v1/tontines/" + tid + "/activer", g.jeton(), null);
+    assertThat(activation.statut()).isEqualTo(400);
+    assertThat(activation.code()).isEqualTo("DATE_DEBUT_PASSEE");
+    assertThat(api.get("/v1/tontines/" + tid + "/cycles", g.jeton()).data().path("content"))
+        .isEmpty();
+
+    // Date corrigée : l'activation passe
+    assertThat(
+            api.put("/v1/tontines/" + tid, g.jeton(), Map.of("dateDebut", aujourdHui.toString()))
+                .statut())
+        .isEqualTo(200);
+    donnees.activer(g.jeton(), tid);
   }
 }

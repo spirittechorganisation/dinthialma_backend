@@ -194,7 +194,13 @@ public class CotisationController {
         responseCode = "201",
         description = "Cotisation enregistrée en statut EN_ATTENTE",
         content = @Content(schema = @Schema(implementation = CotisationResponse.class))),
-    @ApiResponse(responseCode = "400", description = "Données invalides ou cycle pas EN_COURS"),
+    @ApiResponse(
+        responseCode = "400",
+        description =
+            "Données invalides, tour pas ouvert, ou membre SORTI / SUSPENDU (`MEMBRE_INACTIF`,"
+                + " B44 : le réactiver d'abord), ou sous-cycle événementiel pas encore commencé"
+                + " (`ECHEANCE_NON_OUVERTE`, B47 : pas de paiement d'avance ; rotatives non"
+                + " concernées)"),
     @ApiResponse(responseCode = "401", description = "JWT manquant ou expiré"),
     @ApiResponse(responseCode = "403", description = "Accès interdit (pas cotisant de la tontine)"),
     @ApiResponse(responseCode = "404", description = "Tontine ou cycle introuvable"),
@@ -239,7 +245,13 @@ public class CotisationController {
         responseCode = "201",
         description = "Cotisation enregistrée et validée",
         content = @Content(schema = @Schema(implementation = CotisationResponse.class))),
-    @ApiResponse(responseCode = "400", description = "Données invalides ou cycle pas EN_COURS"),
+    @ApiResponse(
+        responseCode = "400",
+        description =
+            "Données invalides, tour pas ouvert, ou membre SORTI / SUSPENDU (`MEMBRE_INACTIF`,"
+                + " B44 : le réactiver d'abord), ou sous-cycle événementiel pas encore commencé"
+                + " (`ECHEANCE_NON_OUVERTE`, B47 : pas de paiement d'avance ; rotatives non"
+                + " concernées)"),
     @ApiResponse(responseCode = "401", description = "JWT manquant ou expiré"),
     @ApiResponse(
         responseCode = "403",
@@ -432,7 +444,10 @@ public class CotisationController {
               + " l'échéance de référence (`?echeanceId=`, sinon l'échéance en cours) ;"
               + " `echeancesDues`, `echeancesPayees` et `echeances[]` détaillent tout le tour."
               + "Les membres sont triés par `ordreJackpot` croissant puis par date d'adhésion."
-              + " Les membres SORTI sont exclus.\n\n"
+              + " Les membres SORTI sont exclus, sauf avec `?inclureSortis=true` (B48) : un"
+              + " membre SORTI apparaît s'il a une cotisation (EN_ATTENTE, VALIDE ou EN_RETARD)"
+              + " sur ce cycle ; `statutMembre` permet de le distinguer. Les membres retirés"
+              + " restent exclus.\n\n"
               + "Pagination : `?page=0&size=20` (tri par défaut `ordreJackpot,asc` puis"
               + " `createdAt,asc`).")
   @ApiResponses({
@@ -458,6 +473,12 @@ public class CotisationController {
       @Parameter(description = "Échéance de référence (défaut : échéance en cours)")
           @RequestParam(required = false)
           UUID echeanceId,
+      @Parameter(
+              description =
+                  "Inclure les membres SORTI qui ont une cotisation sur ce cycle (B48, défaut"
+                      + " false)")
+          @RequestParam(defaultValue = "false")
+          boolean inclureSortis,
       @PageableDefault(size = 20)
           @SortDefaults({
             @SortDefault(sort = "ordreJackpot", direction = Sort.Direction.ASC),
@@ -469,7 +490,8 @@ public class CotisationController {
 
     String keycloakId = headerParser.extractKeycloakId(httpRequest);
     Page<CycleRecapCotisationResponse> recap =
-        cotisationService.getCycleRecap(keycloakId, tontineId, cycleId, echeanceId, pageable);
+        cotisationService.getCycleRecap(
+            keycloakId, tontineId, cycleId, echeanceId, inclureSortis, pageable);
 
     return ResponseEntity.ok(
         new CustomResponse(
@@ -518,7 +540,10 @@ public class CotisationController {
               + " à tout moment le cumul cotisé par chaque membre, sans devoir se limiter à un"
               + " cycle précis.\n\n"
               + "Les membres sans cotisation validée apparaissent avec `totalCotise = 0`."
-              + " Les membres SORTI sont exclus. Tri par `ordreJackpot` croissant puis par date"
+              + " Les membres SORTI sont exclus, sauf avec `?inclureSortis=true` (B48) : un"
+              + " membre SORTI apparaît s'il a au moins une cotisation VALIDÉE, comme dans la"
+              + " distribution finale (B43) ; `statutMembre` permet de le distinguer. Les membres"
+              + " retirés restent exclus. Tri par `ordreJackpot` croissant puis par date"
               + " d'adhésion.\n\n"
               + "Pagination : `?page=0&size=20` (tri par défaut `ordreJackpot,asc` puis"
               + " `createdAt,asc`).")
@@ -537,6 +562,12 @@ public class CotisationController {
               example = "550e8400-e29b-41d4-a716-446655440000")
           @PathVariable
           UUID tontineId,
+      @Parameter(
+              description =
+                  "Inclure les membres SORTI qui ont au moins une cotisation validée (B48, défaut"
+                      + " false)")
+          @RequestParam(defaultValue = "false")
+          boolean inclureSortis,
       @PageableDefault(size = 20)
           @SortDefaults({
             @SortDefault(sort = "ordreJackpot", direction = Sort.Direction.ASC),
@@ -548,7 +579,7 @@ public class CotisationController {
 
     String keycloakId = headerParser.extractKeycloakId(httpRequest);
     Page<MembreTotalCotisationResponse> recap =
-        cotisationService.getTontineRecapTotal(keycloakId, tontineId, pageable);
+        cotisationService.getTontineRecapTotal(keycloakId, tontineId, inclureSortis, pageable);
 
     return ResponseEntity.ok(
         new CustomResponse(

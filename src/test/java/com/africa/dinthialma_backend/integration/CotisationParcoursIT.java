@@ -291,4 +291,109 @@ class CotisationParcoursIT extends AbstractIntegrationTest {
         .isEqualTo("INVALID_PARAMETER");
     assertThat(api.get(cotisations(t) + "/export", t.membre().jeton()).statut()).isEqualTo(403);
   }
+
+  @Test
+  @DisplayName(
+      "B44 : membre SUSPENDU ou SORTI → MEMBRE_INACTIF (déclaration et saisie) ; sa cotisation"
+          + " déjà déclarée reste validable")
+  void membreInactif() {
+    TontineEnCours t = donnees.tontineEnCours("Membre inactif");
+    String g = t.gestionnaire().jeton();
+    String declaree =
+        donnees
+            .declarer(t.membre().jeton(), t.tontineId(), t.cycleId(), MONTANT)
+            .path("id")
+            .asText();
+    String statut = "/v1/tontines/" + t.tontineId() + "/membres/" + t.membreId() + "/statut";
+    Map<String, Object> saisie =
+        Map.of("membreId", t.membreId(), "cycleId", t.cycleId(), "montant", MONTANT);
+
+    TestDataFactory.attendre(api.patch(statut, g, Map.of("statut", "SUSPENDU")), 200);
+    Reponse parLeMembre =
+        api.post(
+            cotisations(t), t.membre().jeton(), Map.of("cycleId", t.cycleId(), "montant", MONTANT));
+    assertThat(parLeMembre.statut()).isEqualTo(400);
+    assertThat(parLeMembre.code()).isEqualTo("MEMBRE_INACTIF");
+    Reponse parLeGestionnaire = api.post(cotisations(t) + "/admin", g, saisie);
+    assertThat(parLeGestionnaire.statut()).isEqualTo(400);
+    assertThat(parLeGestionnaire.code()).isEqualTo("MEMBRE_INACTIF");
+
+    // L'argent a été remis avant la suspension : la validation reste possible
+    assertThat(
+            TestDataFactory.attendre(
+                    api.put(cotisations(t) + "/" + declaree + "/valider", g, null), 200)
+                .data()
+                .path("statut")
+                .asText())
+        .isEqualTo("VALIDE");
+
+    TestDataFactory.attendre(api.patch(statut, g, Map.of("statut", "SORTI")), 200);
+    assertThat(api.post(cotisations(t) + "/admin", g, saisie).code()).isEqualTo("MEMBRE_INACTIF");
+  }
+
+  @Test
+  @DisplayName(
+      "B48 : récaps avec ?inclureSortis=true → SORTI ayant cotisé inclus ; sans → exclus ; SORTI"
+          + " sans cotisation et membre retiré toujours exclus")
+  void recapsInclureSortis() {
+    TontineEnCours t = donnees.tontineEnCours("Récap sortis");
+    String g = t.gestionnaire().jeton();
+    String membres = "/v1/tontines/" + t.tontineId() + "/membres";
+    String sansCotisation = preInscrire(g, membres, "SansCotisation");
+    String retire = preInscrire(g, membres, "Retire");
+    TestDataFactory.attendre(
+        api.post(
+            cotisations(t) + "/admin",
+            g,
+            Map.of("membreId", t.membreId(), "cycleId", t.cycleId(), "montant", MONTANT)),
+        201);
+    TestDataFactory.attendre(
+        api.post(
+            cotisations(t) + "/admin",
+            g,
+            Map.of("membreId", retire, "cycleId", t.cycleId(), "montant", MONTANT)),
+        201);
+    for (String id : List.of(t.membreId(), sansCotisation)) {
+      TestDataFactory.attendre(
+          api.patch(membres + "/" + id + "/statut", g, Map.of("statut", "SORTI")), 200);
+    }
+    TestDataFactory.attendre(api.delete(membres + "/" + retire, g), 200);
+
+    String total = cotisations(t) + "/recap-total";
+    assertThat(api.get(total, g).data().path("content")).isEmpty();
+    JsonNode avecSortis = api.get(total + "?inclureSortis=true", g).data().path("content");
+    assertThat(ids(avecSortis, "membreId")).containsExactly(t.membreId());
+    assertThat(avecSortis.get(0).path("statutMembre").asText()).isEqualTo("SORTI");
+    assertThat(avecSortis.get(0).path("totalCotise").asInt()).isEqualTo(MONTANT);
+
+    String tour = cotisations(t) + "/recap/" + t.cycleId();
+    assertThat(api.get(tour, g).data().path("content")).isEmpty();
+    JsonNode tourAvecSortis = api.get(tour + "?inclureSortis=true", g).data().path("content");
+    assertThat(ids(tourAvecSortis, "membreId")).containsExactly(t.membreId());
+    assertThat(tourAvecSortis.get(0).path("statutCotisation").asText()).isEqualTo("VALIDE");
+  }
+
+  private String preInscrire(String jeton, String membres, String prenom) {
+    return TestDataFactory.attendre(
+            api.post(
+                membres,
+                jeton,
+                Map.of(
+                    "phone",
+                    TestDataFactory.nouveauTelephone(),
+                    "firstName",
+                    prenom,
+                    "lastName",
+                    "Test")),
+            201)
+        .data()
+        .path("id")
+        .asText();
+  }
+
+  private static List<String> ids(JsonNode liste, String champ) {
+    return StreamSupport.stream(liste.spliterator(), false)
+        .map(x -> x.path(champ).asText())
+        .toList();
+  }
 }
