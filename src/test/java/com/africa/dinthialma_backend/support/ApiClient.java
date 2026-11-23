@@ -50,6 +50,11 @@ public class ApiClient {
     return envoyer("DELETE", chemin, jeton, null);
   }
 
+  /** DELETE avec un corps JSON (ex. motif d'annulation d'un retrait, B42). */
+  public Reponse delete(String chemin, String jeton, Object corps) {
+    return envoyer("DELETE", chemin, jeton, corps);
+  }
+
   /** Corps brut (ex. JSON volontairement illisible). */
   public Reponse postBrut(String chemin, String jeton, String corpsBrut) {
     return executer("POST", chemin, jeton, HttpRequest.BodyPublishers.ofString(corpsBrut));

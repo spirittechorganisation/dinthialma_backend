@@ -139,8 +139,9 @@ public class RappelsEcheanceService {
   }
 
   /**
-   * Membres actifs sans déclaration retenue (aucune, ou seulement refusée) sur l'échéance (B32).
-   * Une cotisation sans échéance enregistrée (donnée antérieure) couvre l'échéance de son tour.
+   * Membres actifs non soldés sans déclaration retenue (aucune, ou seulement refusée) sur
+   * l'échéance (B32, B42). Une cotisation sans échéance enregistrée (donnée antérieure) couvre
+   * l'échéance de son tour.
    */
   private List<TontineMembre> sansDeclaration(EcheanceCycle echeance) {
     CycleTontine cycle = echeance.getCycle();
@@ -155,6 +156,8 @@ public class RappelsEcheanceService {
         .findByTontine_IdAndStatutAndDeletedAtIsNull(cycle.getTontine().getId(), MembreStatut.ACTIF)
         .stream()
         .filter(m -> !declarants.contains(m.getId()))
+        // B42 : membre soldé (retrait total) : ni rappel, ni signalement au gestionnaire
+        .filter(m -> m.getSoldeLe() == null)
         .toList();
   }
 

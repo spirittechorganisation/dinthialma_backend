@@ -1,6 +1,7 @@
 package com.africa.dinthialma_backend.tontine.dto;
 
 import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
+import com.africa.dinthialma_backend.tontine.codeList.RegleRetrait;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
@@ -21,4 +22,12 @@ public class ModifierReglagesRequest {
       example = "DISPONIBLE",
       nullable = true)
   private ModeRemise modeRemise;
+
+  @Schema(
+      description =
+          "Règle de retrait anticipé (B42, événementielle uniquement) : INTERDIT ou LIBRE. Une"
+              + " rotative → 400 RETRAIT_NON_DISPONIBLE.",
+      example = "LIBRE",
+      nullable = true)
+  private RegleRetrait regleRetrait;
 }

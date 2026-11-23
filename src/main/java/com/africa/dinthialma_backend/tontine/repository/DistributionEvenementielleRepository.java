@@ -14,6 +14,28 @@ import org.springframework.stereotype.Repository;
 public interface DistributionEvenementielleRepository
     extends JpaRepository<DistributionEvenementielle, UUID> {
 
+  /**
+   * Répartition finale d'une tontine (B51), membre, utilisateur et sous-cycle chargés, dans l'ordre
+   * de passage puis d'adhésion. Vide tant que la distribution n'est pas faite.
+   */
+  @Query(
+      "SELECT d FROM DistributionEvenementielle d"
+          + " JOIN FETCH d.membre m"
+          + " JOIN FETCH m.user"
+          + " JOIN FETCH d.cycle"
+          + " WHERE d.tontine.id = :tontineId AND d.deletedAt IS NULL"
+          + " ORDER BY m.ordreJackpot ASC NULLS LAST, m.createdAt ASC")
+  List<DistributionEvenementielle> findByTontineAvecMembres(@Param("tontineId") UUID tontineId);
+
+  /** Répartition enregistrée à la clôture de ce sous-cycle (B51) ; vide pour les autres. */
+  @Query(
+      "SELECT d FROM DistributionEvenementielle d"
+          + " JOIN FETCH d.membre m"
+          + " JOIN FETCH m.user"
+          + " WHERE d.cycle.id = :cycleId AND d.deletedAt IS NULL"
+          + " ORDER BY m.ordreJackpot ASC NULLS LAST, m.createdAt ASC")
+  List<DistributionEvenementielle> findByCycleAvecMembres(@Param("cycleId") UUID cycleId);
+
   /** Distribution déjà enregistrée pour cette tontine (protection contre une double clôture). */
   boolean existsByTontine_IdAndDeletedAtIsNull(UUID tontineId);
 

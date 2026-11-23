@@ -20,6 +20,8 @@ import com.africa.dinthialma_backend.contribution.repository.CotisationRepositor
 import com.africa.dinthialma_backend.contribution.repository.CotisationSpecifications;
 import com.africa.dinthialma_backend.contribution.service.interfaces.CotisationService;
 import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
+import com.africa.dinthialma_backend.epargne.calcul.SoldeEpargne;
+import com.africa.dinthialma_backend.epargne.repository.RetraitEpargneRepository;
 import com.africa.dinthialma_backend.jackpot.service.interfaces.PrioriteJackpotService;
 import com.africa.dinthialma_backend.me.codeList.ModeActivite;
 import com.africa.dinthialma_backend.me.codeList.StatutCotisationDue;
@@ -94,6 +96,7 @@ public class MeServiceImpl implements MeService {
   private final PrioriteJackpotService prioriteService;
   private final SuiviTourService suiviTour;
   private final EcheanceCycleRepository echeanceRepository;
+  private final RetraitEpargneRepository retraitRepository;
 
   // ─── Résumé « Je cotise » ────────────────────────────────────────────────
 
@@ -158,7 +161,8 @@ public class MeServiceImpl implements MeService {
       Map<UUID, Long> toursPayesParMembre,
       Map<UUID, CycleTontine> cycleEnCoursParTontine,
       Map<UUID, List<Cotisation>> cotisationsEnCoursParMembre,
-      Map<UUID, List<Object[]>> aRegulariserParMembre) {}
+      Map<UUID, List<Object[]>> aRegulariserParMembre,
+      Map<UUID, BigDecimal> retraitsParMembre) {}
 
   private AgregatsSummary chargerAgregats(List<TontineMembre> memberships) {
     List<UUID> membreIds = memberships.stream().map(TontineMembre::getId).toList();
@@ -190,7 +194,9 @@ public class MeServiceImpl implements MeService {
         cycleEnCoursParTontine,
         cotisationsEnCours(cycleEnCoursParTontine.values(), membreIds),
         echeanceRepository.findARegulariserByMembreIds(membreIds).stream()
-            .collect(Collectors.groupingBy(ligne -> (UUID) ligne[2])));
+            .collect(Collectors.groupingBy(ligne -> (UUID) ligne[2])),
+        retraitRepository.sumRemisGroupByMembreIn(membreIds).stream()
+            .collect(Collectors.toMap(row -> (UUID) row[0], row -> (BigDecimal) row[1])));
   }
 
   /**
@@ -265,6 +271,12 @@ public class MeServiceImpl implements MeService {
         agregats.statsParMembre().getOrDefault(m.getId(), Map.of());
     Object[] jackpots = agregats.jackpotsParMembre().get(m.getId());
     CycleTontine cycle = agregats.cycleEnCoursParTontine().get(t.getId());
+    BigDecimal totalValide = montant(stats.get(CotisationStatut.VALIDE));
+    // B42 : solde d'épargne (événementielle seulement)
+    BigDecimal retire =
+        t.getTontineType() == TontineType.EVENEMENTIELLE
+            ? agregats.retraitsParMembre().getOrDefault(m.getId(), BigDecimal.ZERO)
+            : null;
     return MeSummaryResponse.TontineCotisant.builder()
         .tontineId(t.getId())
         .nom(t.getNom())
@@ -283,8 +295,11 @@ public class MeServiceImpl implements MeService {
         .monStatutMembre(m.getStatut())
         .ordreJackpot(m.getOrdreJackpot())
         .aRecuJackpot(m.isARecuJackpot())
-        .totalCotiseValide(montant(stats.get(CotisationStatut.VALIDE)))
+        .totalCotiseValide(totalValide)
         .totalEnAttente(montant(stats.get(CotisationStatut.EN_ATTENTE)))
+        .totalRetire(retire)
+        .solde(retire != null ? SoldeEpargne.solde(totalValide, retire) : null)
+        .soldeLe(m.getSoldeLe())
         .totalJackpotsRecus(jackpots != null ? (BigDecimal) jackpots[1] : BigDecimal.ZERO)
         .nombreJackpotsRecus(jackpots != null ? (Long) jackpots[2] : 0L)
         .toursPayes(agregats.toursPayesParMembre().getOrDefault(m.getId(), 0L))
@@ -333,13 +348,14 @@ public class MeServiceImpl implements MeService {
 
   /**
    * Cotisation due sur l'échéance courante du tour en cours (B32). Null si pas de tour en cours,
-   * tontine non ACTIVE ou membership non ACTIF (aucun paiement attendu).
+   * tontine non ACTIVE, membership non ACTIF ou soldé (B42) : aucun paiement attendu.
    */
   private MeSummaryResponse.CotisationDue buildCotisationDue(
       Tontine tontine, TontineMembre membre, CycleTontine cycle, List<Cotisation> cotisations) {
     if (cycle == null
         || tontine.getStatut() != TontineStatut.ACTIVE
-        || membre.getStatut() != MembreStatut.ACTIF) {
+        || membre.getStatut() != MembreStatut.ACTIF
+        || membre.getSoldeLe() != null) {
       return null;
     }
     LocalDateTime maintenant = Fuseau.maintenant();

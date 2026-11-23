@@ -175,10 +175,23 @@ public class CycleResponse {
     @Schema(description = "Somme totale des cotisations VALIDÉES de ce membre", example = "50000")
     private BigDecimal montantCotise;
 
-    @Schema(description = "Quote-part de commission déduite", example = "1000")
+    @Schema(
+        description =
+            "Quote-part de commission déduite, au prorata de ce qui lui est réellement distribué"
+                + " (cotisé − retiré)",
+        example = "1000")
     private BigDecimal montantCommission;
 
-    @Schema(description = "Montant net à restituer à ce membre", example = "49000")
+    @Schema(
+        description = "Retraits anticipés déjà remis avant la distribution (B42)",
+        example = "0")
+    private BigDecimal montantRetire;
+
+    @Schema(
+        description =
+            "Montant restitué à la distribution = cotisé − commission − retiré (0 pour un membre"
+                + " soldé)",
+        example = "49000")
     private BigDecimal montantNet;
   }
 }

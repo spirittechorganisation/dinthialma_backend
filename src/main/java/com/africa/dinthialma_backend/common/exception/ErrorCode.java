@@ -195,7 +195,30 @@ public enum ErrorCode {
    * Date de début passée (B46) : à la création, à la modification, ou à l'activation qui génère les
    * tours. Choisir aujourd'hui ou une date future.
    */
-  DATE_DEBUT_PASSEE;
+  DATE_DEBUT_PASSEE,
+
+  // ─── Distribution finale et retraits (B51, B42) ───────────────────────
+  /** Distribution finale pas encore faite (B51) : rien à relire. */
+  DISTRIBUTION_NON_FAITE,
+  /** Retraits non autorisés par la règle de la tontine ({@code regleRetrait = INTERDIT}, B42). */
+  RETRAIT_INTERDIT,
+  /** Montant demandé supérieur au solde du membre (B42) ; {@code data.solde}. */
+  RETRAIT_SOLDE_INSUFFISANT,
+  /**
+   * Membre soldé (retrait total, B42) : plus de cotisation ni de nouveau retrait. Annuler le
+   * retrait total pour revenir en arrière.
+   */
+  MEMBRE_SOLDE,
+  /**
+   * Retrait non annulable (B42) : déjà annulé, distribution finale faite, ou retrait partiel
+   * antérieur à un retrait total encore actif.
+   */
+  RETRAIT_NON_ANNULABLE,
+  /**
+   * Retraits indisponibles sur cette tontine (B42) : rotative, pas encore active, terminée ou déjà
+   * distribuée.
+   */
+  RETRAIT_NON_DISPONIBLE;
 
   /** Code générique correspondant à un statut HTTP (repli quand aucun code métier n'est fourni). */
   public static ErrorCode fromStatus(HttpStatusCode status) {

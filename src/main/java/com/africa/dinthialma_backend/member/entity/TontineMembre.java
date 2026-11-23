@@ -76,6 +76,13 @@ public class TontineMembre extends BaseEntity {
   @Column(name = "date_jackpot")
   private LocalDateTime dateJackpot;
 
+  /**
+   * Date du retrait total de son épargne (B42) : le membre est « soldé », il ne cotise plus et ne
+   * reçoit plus de rappel. Null sinon. Ce n'est pas un statut : il reste ACTIF dans les listes.
+   */
+  @Column(name = "solde_le")
+  private LocalDateTime soldeLe;
+
   /** Soft delete. */
   @Column(name = "deleted_at")
   private LocalDateTime deletedAt;

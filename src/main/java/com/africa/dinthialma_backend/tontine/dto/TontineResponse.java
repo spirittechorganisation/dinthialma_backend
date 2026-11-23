@@ -5,6 +5,7 @@ import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
 import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.MonRoleTontine;
+import com.africa.dinthialma_backend.tontine.codeList.RegleRetrait;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import com.africa.dinthialma_backend.tontine.codeList.UniteRythme;
@@ -12,6 +13,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.Getter;
@@ -69,6 +71,13 @@ public class TontineResponse {
 
   @Schema(description = "Option de remise du jackpot par défaut (B33)", example = "DISPONIBLE")
   private ModeRemise modeRemise;
+
+  @Schema(
+      description =
+          "Règle de retrait anticipé (B42) : LIBRE (nouvelle événementielle) ou INTERDIT"
+              + " (rotative, tontines antérieures)",
+      example = "LIBRE")
+  private RegleRetrait regleRetrait;
 
   @Schema(description = "Code de l'ordre des bénéficiaires (ROTATIVE uniquement)", example = "FIXE")
   private String ordreBeneficiaire;
@@ -135,6 +144,14 @@ public class TontineResponse {
       allowableValues = {"ACTIF", "SUSPENDU", "SORTI"},
       nullable = true)
   private MembreStatut monStatutMembre;
+
+  @Schema(
+      description =
+          "Répartition finale par membre (B51), présente seulement dans la réponse de PUT"
+              + " /cloturer quand la clôture d'une événementielle a fait la distribution ; absente"
+              + " sinon. Elle se relit ensuite avec GET /v1/tontines/{id}/distribution.",
+      nullable = true)
+  private List<CycleResponse.MembreDistributionInfo> distributionParMembre;
 
   @Schema(description = "Date de création de la tontine")
   private LocalDateTime createdAt;

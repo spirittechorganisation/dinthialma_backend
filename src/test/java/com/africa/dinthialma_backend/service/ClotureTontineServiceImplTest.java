@@ -39,6 +39,7 @@ import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import com.africa.dinthialma_backend.tontine.dto.ClotureEnSuspensResponse;
 import com.africa.dinthialma_backend.tontine.dto.CloturerTontineRequest;
+import com.africa.dinthialma_backend.tontine.dto.CycleResponse;
 import com.africa.dinthialma_backend.tontine.dto.TontineResponse;
 import com.africa.dinthialma_backend.tontine.entity.CycleGagnant;
 import com.africa.dinthialma_backend.tontine.entity.CycleTontine;
@@ -497,6 +498,38 @@ class ClotureTontineServiceImplTest {
       TontineResponse r = service.cloturer(kc, tontine.getId(), null);
 
       assertThat(r.getStatut()).isEqualTo(TontineStatut.TERMINEE);
+    }
+  }
+
+  @Nested
+  @DisplayName("B51 : répartition finale dans la réponse de la clôture forcée")
+  class RepartitionDansLaReponse {
+
+    @Test
+    @DisplayName("événementielle arrêtée avant son terme : distributionParMembre renvoyée")
+    void distributionRenvoyee() throws Exception {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      tours(tour(1, CycleStatut.EN_COURS, -1));
+      CycleResponse.MembreDistributionInfo part =
+          CycleResponse.MembreDistributionInfo.builder()
+              .membreId(membres.get(0).getId())
+              .montantCotise(new BigDecimal("2000"))
+              .montantCommission(BigDecimal.ZERO)
+              .montantNet(new BigDecimal("2000"))
+              .build();
+      when(cycleService.distribuerMaintenant(gestionnaire, tontine)).thenReturn(List.of(part));
+
+      TontineResponse r = service.cloturer(kc, tontine.getId(), forcer(true));
+
+      assertThat(r.getDistributionParMembre()).containsExactly(part);
+    }
+
+    @Test
+    @DisplayName("rien à distribuer (rotative, ou distribution déjà faite) : champ absent")
+    void sansDistribution() throws Exception {
+      tours(tourSolde(1));
+
+      assertThat(service.cloturer(kc, tontine.getId(), null).getDistributionParMembre()).isNull();
     }
   }
 }

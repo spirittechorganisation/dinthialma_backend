@@ -7,6 +7,7 @@ import com.africa.dinthialma_backend.tontine.calendrier.Rythme;
 import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
 import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
+import com.africa.dinthialma_backend.tontine.codeList.RegleRetrait;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import com.africa.dinthialma_backend.tontine.codeList.UniteRythme;
@@ -175,6 +176,19 @@ public class Tontine extends BaseEntity {
   @Enumerated(EnumType.STRING)
   @Column(name = "mode_remise", nullable = false, length = 30)
   private ModeRemise modeRemise;
+
+  /**
+   * Règle de retrait anticipé (B42) : LIBRE pour une nouvelle événementielle, INTERDIT sinon (et
+   * pour toutes les tontines antérieures à V044).
+   */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "regle_retrait", nullable = false, length = 20)
+  private RegleRetrait regleRetrait;
+
+  /** Règle de retrait ; INTERDIT si non renseignée. */
+  public RegleRetrait getRegleRetraitEffectif() {
+    return regleRetrait != null ? regleRetrait : RegleRetrait.INTERDIT;
+  }
 
   /** Option de remise par défaut ; DISPONIBLE (fonctionnement historique) si non renseignée. */
   public ModeRemise getModeRemiseEffectif() {

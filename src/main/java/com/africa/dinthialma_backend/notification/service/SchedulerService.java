@@ -150,9 +150,13 @@ public class SchedulerService {
                   NotificationLiens.cotisation(cot));
             });
 
+    // B42 : un membre soldé (retrait total) ne cotise plus, il n'est plus rappelé
     List<TontineMembre> membresActifs =
-        membreRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
-            tontine.getId(), MembreStatut.ACTIF);
+        membreRepository
+            .findByTontine_IdAndStatutAndDeletedAtIsNull(tontine.getId(), MembreStatut.ACTIF)
+            .stream()
+            .filter(m -> m.getSoldeLe() == null)
+            .toList();
 
     boolean isJourCle =
         joursRestants == 30 || joursRestants == 7 || joursRestants == 3 || joursRestants == 1;

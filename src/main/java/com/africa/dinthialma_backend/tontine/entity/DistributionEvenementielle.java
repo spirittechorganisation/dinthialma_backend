@@ -48,7 +48,11 @@ public class DistributionEvenementielle extends BaseEntity {
   @Column(name = "montant_commission", nullable = false, precision = 12, scale = 2)
   private BigDecimal montantCommission;
 
-  /** Montant effectivement remis au membre. */
+  /** Retraits anticipés déjà remis avant la distribution (B42, V044 ; 0 avant). */
+  @Column(name = "montant_retire", nullable = false, precision = 12, scale = 2)
+  private BigDecimal montantRetire;
+
+  /** Montant effectivement remis au membre à la distribution = cotisé − commission − retiré. */
   @Column(name = "montant_net", nullable = false, precision = 12, scale = 2)
   private BigDecimal montantNet;
 

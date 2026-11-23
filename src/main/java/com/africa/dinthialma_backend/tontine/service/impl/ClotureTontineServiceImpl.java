@@ -28,6 +28,7 @@ import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import com.africa.dinthialma_backend.tontine.dto.ClotureEnSuspensResponse;
 import com.africa.dinthialma_backend.tontine.dto.CloturerTontineRequest;
+import com.africa.dinthialma_backend.tontine.dto.CycleResponse;
 import com.africa.dinthialma_backend.tontine.dto.TontineResponse;
 import com.africa.dinthialma_backend.tontine.entity.CycleTontine;
 import com.africa.dinthialma_backend.tontine.entity.EcheanceCycle;
@@ -105,7 +106,8 @@ public class ClotureTontineServiceImpl implements ClotureTontineService {
     }
 
     // Événementielle arrêtée avant son terme : chaque membre reçoit sa part tout de suite
-    cycleService.distribuerMaintenant(caller, tontine);
+    List<CycleResponse.MembreDistributionInfo> distribution =
+        cycleService.distribuerMaintenant(caller, tontine);
 
     tontine.setStatut(TontineStatut.TERMINEE);
     Tontine saved = tontineRepository.save(tontine);
@@ -121,13 +123,19 @@ public class ClotureTontineServiceImpl implements ClotureTontineService {
         forcer,
         caller.getId());
 
-    return tontineMapper.toResponse(
-        saved,
-        (int) membreRepository.countByTontine_IdAndDeletedAtIsNull(tontineId),
-        caller.getId(),
-        membreRepository
-            .findByTontine_IdAndUser_IdAndDeletedAtIsNull(tontineId, caller.getId())
-            .orElse(null));
+    return tontineMapper
+        .toResponse(
+            saved,
+            (int) membreRepository.countByTontine_IdAndDeletedAtIsNull(tontineId),
+            caller.getId(),
+            membreRepository
+                .findByTontine_IdAndUser_IdAndDeletedAtIsNull(tontineId, caller.getId())
+                .orElse(null))
+        .toBuilder()
+        // B51 : la répartition calculée par la clôture forcée est renvoyée, comme à la clôture
+        // du dernier sous-cycle
+        .distributionParMembre(distribution == null || distribution.isEmpty() ? null : distribution)
+        .build();
   }
 
   // ─── Points en suspens ───────────────────────────────────────────────────
