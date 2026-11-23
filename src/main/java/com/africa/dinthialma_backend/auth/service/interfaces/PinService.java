@@ -4,6 +4,7 @@ import com.africa.dinthialma_backend.auth.dto.LoginResponse;
 import com.africa.dinthialma_backend.auth.dto.PinLoginRequest;
 import com.africa.dinthialma_backend.auth.dto.PinResetRequest;
 import com.africa.dinthialma_backend.auth.dto.PinSetupRequest;
+import com.africa.dinthialma_backend.auth.dto.PinSetupResponse;
 import com.africa.dinthialma_backend.common.exception.CustomException;
 
 /**
@@ -28,7 +29,7 @@ public interface PinService {
    * @param keycloakId identifiant Keycloak de l'utilisateur authentifié (extrait du JWT)
    * @param request PIN + confirmation
    */
-  void setupPin(String keycloakId, PinSetupRequest request) throws CustomException;
+  PinSetupResponse setupPin(String keycloakId, PinSetupRequest request) throws CustomException;
 
   /**
    * Authentifie l'utilisateur via son code PIN et retourne de nouveaux tokens JWT.

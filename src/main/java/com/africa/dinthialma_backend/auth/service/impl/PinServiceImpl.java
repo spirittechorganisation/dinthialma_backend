@@ -1,15 +1,17 @@
 package com.africa.dinthialma_backend.auth.service.impl;
 
-import com.africa.dinthialma_backend.auth.codeList.ClientType;
+import com.africa.dinthialma_backend.auth.codeList.UserRole;
 import com.africa.dinthialma_backend.auth.dto.LoginResponse;
 import com.africa.dinthialma_backend.auth.dto.PinLoginRequest;
 import com.africa.dinthialma_backend.auth.dto.PinResetRequest;
 import com.africa.dinthialma_backend.auth.dto.PinSetupRequest;
+import com.africa.dinthialma_backend.auth.dto.PinSetupResponse;
 import com.africa.dinthialma_backend.auth.entity.OtpVerification;
 import com.africa.dinthialma_backend.auth.entity.User;
 import com.africa.dinthialma_backend.auth.entity.UserSession;
 import com.africa.dinthialma_backend.auth.repository.OtpVerificationRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRepository;
+import com.africa.dinthialma_backend.auth.repository.UserRoleAssignmentRepository;
 import com.africa.dinthialma_backend.auth.service.interfaces.KeycloakAuthService;
 import com.africa.dinthialma_backend.auth.service.interfaces.OtpGardeService;
 import com.africa.dinthialma_backend.auth.service.interfaces.PinService;
@@ -57,6 +59,7 @@ public class PinServiceImpl implements PinService {
   private final KeycloakAuthService keycloakAuthService;
   private final WhatsappService whatsappService;
   private final OtpGardeService otpGarde;
+  private final UserRoleAssignmentRepository roleAssignmentRepository;
 
   /**
    * Encodeur Argon2id – paramètres renforcés pour les PINs courts (6 chiffres). saltLength=16,
@@ -69,7 +72,8 @@ public class PinServiceImpl implements PinService {
 
   @Override
   @Transactional
-  public void setupPin(String keycloakId, PinSetupRequest request) throws CustomException {
+  public PinSetupResponse setupPin(String keycloakId, PinSetupRequest request)
+      throws CustomException {
     log.debug("Configuration PIN pour keycloakId={}", keycloakId);
 
     User user = findUserByKeycloakId(keycloakId);
@@ -81,6 +85,10 @@ public class PinServiceImpl implements PinService {
           ResponseMessageConstants.AUTH_PIN_MISMATCH, ErrorCode.PIN_MISMATCH);
     }
 
+    // B53 : avec le mot de passe, cet appareil devient de confiance (jeton hors ligne), sauf
+    // SUPER_ADMIN. Mot de passe faux → 401 INVALID_CREDENTIALS, le PIN n'est pas enregistré.
+    LoginResponse horsLigne = jetonHorsLignePourPin(user, request);
+
     String pinHash = ARGON2.encode(request.getPin());
     user.setPinHash(pinHash);
     user.setPinAttempts(0);
@@ -89,7 +97,34 @@ public class PinServiceImpl implements PinService {
     user.setPinCreatedAt(LocalDateTime.now()); // ← horodatage pour expiration 90j
     userRepository.save(user);
 
-    log.info("Code PIN configuré pour userId={}", user.getId());
+    if (horsLigne != null) {
+      userSessionService.enregistrerSessionAppareil(
+          user,
+          request.getClientType(),
+          request.getAppareilId(),
+          horsLigne.getRefreshToken(),
+          request.getDeviceInfo(),
+          true);
+    }
+    log.info("Code PIN configuré pour userId={} confiance={}", user.getId(), horsLigne != null);
+    return PinSetupResponse.builder().confiance(horsLigne != null).build();
+  }
+
+  /** Jeton hors ligne obtenu avec le mot de passe fourni à la création du PIN, ou null. */
+  private LoginResponse jetonHorsLignePourPin(User user, PinSetupRequest request)
+      throws CustomException {
+    if (request.getMotDePasse() == null || request.getMotDePasse().isBlank()) {
+      return null;
+    }
+    if (request.getAppareilId() == null || request.getClientType() == null) {
+      throw new BadRequestException(
+          "appareilId et clientType sont obligatoires avec le mot de passe",
+          ErrorCode.INVALID_PARAMETER);
+    }
+    if (roleAssignmentRepository.existsByUserIdAndRole(user.getId(), UserRole.SUPER_ADMIN)) {
+      return null;
+    }
+    return keycloakAuthService.login(user.getPhone(), request.getMotDePasse(), true);
   }
 
   // ─── Connexion PIN ────────────────────────────────────────────────
@@ -120,36 +155,41 @@ public class PinServiceImpl implements PinService {
     user.setPinEchecsCumules(0);
     user.setPinLockedUntil(null);
 
-    UserSession session = sessionPourPin(user, request.getClientType());
-    boolean isFallback = !session.getClientType().equals(request.getClientType());
+    // B53 : uniquement la session de CET appareil ; jamais celle d'un autre appareil
+    UserSession session = sessionPourPin(user, request);
 
-    // Déchiffrer le refresh token et appeler Keycloak
+    // Déchiffrer le refresh token (hors ligne pour une session de confiance) et le rejouer
     String refreshToken = userSessionService.decryptRefreshToken(session);
 
     LoginResponse newTokens;
     try {
       newTokens = keycloakAuthService.refreshToken(refreshToken);
     } catch (UnAuthorizedException e) {
-      // Le refresh token Keycloak est expiré ou révoqué : purger la session invalide
-      // pour que l'utilisateur soit orienté vers un login complet au prochain essai
+      // Jeton refusé par Keycloak (expiré, révoqué, compte désactivé) : la session est purgée et
+      // le front repasse par le mot de passe
       userSessionService.revokeSession(session.getId());
       log.warn(
-          "Session Keycloak expirée – session supprimée userId={} clientType={}",
+          "Session Keycloak refusée – session supprimée userId={} clientType={}",
           user.getId(),
           session.getClientType());
-      throw e;
+      throw new UnAuthorizedException(
+          ResponseMessageConstants.AUTH_SESSION_NOT_FOUND, ErrorCode.PIN_SESSION_EXPIRED);
     }
 
-    // Si fallback : supprimer la session source dont le token a été consommé.
-    // Ne JAMAIS donner le même token à deux sessions — la première qui l'utilise
-    // invalide l'autre côté Keycloak (rotation ON).
-    if (isFallback) {
-      revoquerSessionSource(session, request.getClientType());
+    // Rotation : la session de l'appareil reçoit le nouveau jeton
+    if (session.getAppareilId() != null) {
+      userSessionService.enregistrerSessionAppareil(
+          user,
+          request.getClientType(),
+          session.getAppareilId(),
+          newTokens.getRefreshToken(),
+          request.getDeviceInfo(),
+          session.isConfiance());
+      userSessionService.tracerRejeu(session);
+    } else {
+      userSessionService.createOrUpdateSession(
+          user, request.getClientType(), newTokens.getRefreshToken(), request.getDeviceInfo());
     }
-
-    // Créer / renouveler uniquement la session pour le clientType demandé
-    userSessionService.createOrUpdateSession(
-        user, request.getClientType(), newTokens.getRefreshToken(), request.getDeviceInfo());
 
     userRepository.save(user);
 
@@ -204,46 +244,24 @@ public class PinServiceImpl implements PinService {
   }
 
   /**
-   * Session active pour ce type de client ; fallback sur n'importe quelle session active si le
-   * clientType demandé n'en a pas (ex. premier login WEB, PIN tenté en MOBILE).
+   * Session de l'appareil qui demande (B53) : par {@code appareilId} s'il est fourni, sinon la
+   * session d'avant B53 de ce type de client. Aucun repli sur un autre appareil : le PIN seul ne
+   * suffit jamais sur un appareil sans session.
    */
-  private UserSession sessionPourPin(User user, ClientType clientType) throws CustomException {
-    Optional<UserSession> sessionOpt =
-        userSessionService.findActiveSession(user.getId(), clientType);
-    if (sessionOpt.isPresent()) {
-      return sessionOpt.get();
-    }
-    UserSession fallback =
-        userSessionService
-            .findAnyActiveSession(user.getId())
-            .orElseThrow(
-                () -> {
-                  log.warn(
-                      "Aucune session active pour userId={} clientType={}",
-                      user.getId(),
-                      clientType);
-                  return new UnAuthorizedException(
-                      ResponseMessageConstants.AUTH_SESSION_NOT_FOUND,
-                      ErrorCode.PIN_SESSION_EXPIRED);
-                });
-    log.info(
-        "Session fallback utilisée – userId={} sessionClientType={} requestedClientType={}",
-        user.getId(),
-        fallback.getClientType(),
-        clientType);
-    return fallback;
-  }
-
-  private void revoquerSessionSource(UserSession session, ClientType clientType) {
-    try {
-      userSessionService.revokeSession(session.getId());
-      log.info(
-          "[PIN] Session source révoquée après fallback – {} → {}",
-          session.getClientType(),
-          clientType);
-    } catch (CustomException e) {
-      log.warn("[PIN] Impossible de révoquer la session source : {}", e.getMessage());
-    }
+  private UserSession sessionPourPin(User user, PinLoginRequest request) throws CustomException {
+    Optional<UserSession> session =
+        request.getAppareilId() != null
+            ? userSessionService.trouverSessionAppareil(user.getId(), request.getAppareilId())
+            : userSessionService.findActiveSession(user.getId(), request.getClientType());
+    return session.orElseThrow(
+        () -> {
+          log.warn(
+              "Aucune session pour cet appareil – userId={} clientType={}",
+              user.getId(),
+              request.getClientType());
+          return new UnAuthorizedException(
+              ResponseMessageConstants.AUTH_SESSION_NOT_FOUND, ErrorCode.PIN_SESSION_EXPIRED);
+        });
   }
 
   // ─── Réinitialisation PIN via OTP ─────────────────────────────────

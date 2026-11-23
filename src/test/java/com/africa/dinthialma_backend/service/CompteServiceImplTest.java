@@ -39,6 +39,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -264,5 +265,70 @@ class CompteServiceImplTest {
     assertThat(service.savePreferences(user.getKeycloakId(), p).getTontinesFavorites()).isEmpty();
     when(userRepository.findByKeycloakId("x")).thenReturn(Optional.empty());
     assertThatThrownBy(() -> service.getPreferences("x")).isInstanceOf(NotFoundException.class);
+  }
+
+  @Nested
+  @DisplayName("B53 : appareils de confiance")
+  class AppareilsDeConfiance {
+
+    @Test
+    @DisplayName("déconnexion à distance d'un appareil de confiance : jeton hors ligne révoqué")
+    void revocationAppareil() throws Exception {
+      UserSession s =
+          session(ClientType.MOBILE, jeton("sid", "m"), LocalDateTime.now().plusDays(5));
+      s.setConfiance(true);
+      when(sessionRepository.findById(s.getId())).thenReturn(Optional.of(s));
+
+      service.revoquerSession(user.getKeycloakId(), s.getId());
+
+      verify(keycloakAuthService).revoquerJeton(jeton("sid", "m"));
+      verify(keycloakAuthService, never()).logout(any());
+      verify(sessionRepository).delete(s);
+    }
+
+    @Test
+    @DisplayName(
+        "changement de mot de passe sans « autres appareils » : ceux de confiance révoqués quand même")
+    void motDePasse() throws Exception {
+      UserSession courante =
+          session(ClientType.WEB, jeton("sid", "w"), LocalDateTime.now().plusDays(5));
+      UserSession confiance =
+          session(ClientType.MOBILE, jeton("sid", "m"), LocalDateTime.now().plusDays(5));
+      confiance.setConfiance(true);
+      courante.setConfiance(true);
+      UserSession ordinaire =
+          session(ClientType.MOBILE, jeton("sid", "o"), LocalDateTime.now().plusDays(5));
+      // Sans « autres appareils », seules les sessions de confiance sont lues
+      when(sessionRepository.findByUserIdAndConfianceTrue(user.getId()))
+          .thenReturn(List.of(courante, confiance));
+      LoginResponse verification = new LoginResponse();
+      verification.setRefreshToken("verif");
+      when(keycloakAuthService.login(user.getPhone(), "Ancien@2026")).thenReturn(verification);
+
+      service.changerMotDePasse(
+          user.getKeycloakId(), "w", changement("Ancien@2026", "Nouveau@2026", false));
+
+      verify(keycloakAuthService).revoquerJeton(jeton("sid", "m"));
+      verify(sessionRepository).delete(confiance);
+      verify(sessionRepository, never()).delete(courante);
+      verify(sessionRepository, never()).delete(ordinaire);
+    }
+
+    @Test
+    @DisplayName("liste des appareils : confiance, dernière utilisation, identifiant d'appareil")
+    void liste() throws Exception {
+      UserSession s =
+          session(ClientType.MOBILE, jeton("sid", "m"), LocalDateTime.now().plusDays(5));
+      s.setConfiance(true);
+      s.setAppareilId("appareil-1");
+      when(sessionRepository.findByUserIdOrderByLastUsedAtDesc(user.getId()))
+          .thenReturn(List.of(s));
+
+      SessionResponse r = service.listerSessions(user.getKeycloakId(), "m").get(0);
+
+      assertThat(r.isConfiance()).isTrue();
+      assertThat(r.getDerniereUtilisation()).isEqualTo(s.getLastUsedAt());
+      assertThat(r.getAppareilId()).isEqualTo("appareil-1");
+    }
   }
 }

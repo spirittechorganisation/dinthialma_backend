@@ -35,4 +35,19 @@ public interface LoginService {
    * @param clientType type d'appareil à déconnecter ; null = révoquer toutes les sessions
    */
   void logout(String refreshToken, ClientType clientType);
+
+  /**
+   * Déconnexion complète d'un appareil (B53) : la session de cet {@code appareilId} est supprimée
+   * et son jeton hors ligne révoqué chez Keycloak ; sans {@code appareilId}, comportement de {@link
+   * #logout(String, ClientType)}.
+   */
+  void logout(String refreshToken, ClientType clientType, String appareilId);
+
+  /**
+   * Échange un refresh token (normal ou hors ligne, B53) contre de nouveaux jetons, puis met à jour
+   * la session de l'appareil qui le portait (rotation).
+   *
+   * @throws CustomException 401 {@code SESSION_EXPIRED} si Keycloak le refuse
+   */
+  LoginResponse rafraichir(String refreshToken) throws CustomException;
 }
