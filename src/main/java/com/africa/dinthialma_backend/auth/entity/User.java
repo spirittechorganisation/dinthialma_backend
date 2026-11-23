@@ -90,6 +90,14 @@ public class User extends BaseEntity {
   private int pinAttempts = 0;
 
   /**
+   * Échecs de PIN depuis le dernier succès ou la dernière configuration (SE07, V045). Le verrou de
+   * 15 min ne le remet pas à zéro : à {@code Constants.Pin.MAX_ECHECS_CUMULES}, le PIN est
+   * invalidé.
+   */
+  @Column(name = "pin_echecs_cumules", nullable = false)
+  private int pinEchecsCumules = 0;
+
+  /**
    * Date/heure jusqu'à laquelle le PIN est verrouillé. {@code null} = déverrouillé. Fixé après
    * {@code MAX_PIN_ATTEMPTS} échecs consécutifs.
    */

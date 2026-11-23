@@ -38,6 +38,7 @@ public class InscriptionServiceImpl implements InscriptionService {
         login.setPassword(request.getPassword());
         login.setClientType(request.getClientType());
         login.setDeviceInfo(request.getDeviceInfo());
+        login.setAppareilId(request.getAppareilId());
         response.setTokens(loginService.login(login));
       } catch (Exception e) {
         log.warn(

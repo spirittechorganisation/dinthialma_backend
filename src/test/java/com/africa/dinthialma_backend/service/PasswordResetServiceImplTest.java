@@ -19,6 +19,7 @@ import com.africa.dinthialma_backend.auth.repository.OtpVerificationRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRepository;
 import com.africa.dinthialma_backend.auth.service.impl.PasswordResetServiceImpl;
 import com.africa.dinthialma_backend.auth.service.interfaces.KeycloakAuthService;
+import com.africa.dinthialma_backend.auth.service.interfaces.OtpGardeService;
 import com.africa.dinthialma_backend.auth.service.interfaces.UserSessionService;
 import com.africa.dinthialma_backend.common.constants.Constants;
 import com.africa.dinthialma_backend.common.exception.BadRequestException;
@@ -48,6 +49,7 @@ class PasswordResetServiceImplTest {
   @Mock private KeycloakAuthService keycloakAuthService;
   @Mock private UserSessionService userSessionService;
   @Mock private WhatsappService whatsappService;
+  @Mock private OtpGardeService otpGarde;
   @InjectMocks private PasswordResetServiceImpl service;
 
   private static OtpVerification otp(String code, LocalDateTime expiration) {

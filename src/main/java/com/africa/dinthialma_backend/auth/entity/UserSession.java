@@ -108,4 +108,18 @@ public class UserSession extends BaseEntity {
    */
   @Column(name = "expires_at", nullable = false)
   private LocalDateTime expiresAt;
+
+  /**
+   * Identifiant stable de l'appareil (B53), généré une fois et conservé par le front. {@code null}
+   * pour une session d'avant B53 (une session par type de client).
+   */
+  @Column(name = "appareil_id", length = 100)
+  private String appareilId;
+
+  /**
+   * Session de confiance (B53) : elle porte un jeton hors ligne Keycloak, chiffré, que le PIN
+   * rejoue sans dépendre de SSO Session Idle. Révoqué chez Keycloak à la déconnexion de l'appareil.
+   */
+  @Column(name = "confiance", nullable = false)
+  private boolean confiance;
 }

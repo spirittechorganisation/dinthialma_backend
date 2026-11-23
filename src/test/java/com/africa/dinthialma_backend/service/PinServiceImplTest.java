@@ -3,7 +3,7 @@ package com.africa.dinthialma_backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -12,17 +12,21 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.africa.dinthialma_backend.auth.codeList.ClientType;
+import com.africa.dinthialma_backend.auth.codeList.UserRole;
 import com.africa.dinthialma_backend.auth.dto.LoginResponse;
 import com.africa.dinthialma_backend.auth.dto.PinLoginRequest;
 import com.africa.dinthialma_backend.auth.dto.PinResetRequest;
 import com.africa.dinthialma_backend.auth.dto.PinSetupRequest;
+import com.africa.dinthialma_backend.auth.dto.PinSetupResponse;
 import com.africa.dinthialma_backend.auth.entity.OtpVerification;
 import com.africa.dinthialma_backend.auth.entity.User;
 import com.africa.dinthialma_backend.auth.entity.UserSession;
 import com.africa.dinthialma_backend.auth.repository.OtpVerificationRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRepository;
+import com.africa.dinthialma_backend.auth.repository.UserRoleAssignmentRepository;
 import com.africa.dinthialma_backend.auth.service.impl.PinServiceImpl;
 import com.africa.dinthialma_backend.auth.service.interfaces.KeycloakAuthService;
+import com.africa.dinthialma_backend.auth.service.interfaces.OtpGardeService;
 import com.africa.dinthialma_backend.auth.service.interfaces.UserSessionService;
 import com.africa.dinthialma_backend.common.constants.Constants;
 import com.africa.dinthialma_backend.common.exception.CustomException;
@@ -60,6 +64,8 @@ class PinServiceImplTest {
   @Mock private UserSessionService userSessionService;
   @Mock private KeycloakAuthService keycloakAuthService;
   @Mock private WhatsappService whatsappService;
+  @Mock private OtpGardeService otpGarde;
+  @Mock private UserRoleAssignmentRepository roleRepository;
   @InjectMocks private PinServiceImpl service;
 
   private User user;
@@ -77,6 +83,7 @@ class PinServiceImplTest {
         .when(userRepository.findByKeycloakId(user.getKeycloakId()))
         .thenReturn(Optional.of(user));
     lenient().when(userRepository.findByPhone(TEL)).thenReturn(Optional.of(user));
+    lenient().when(userRepository.findByPhoneForUpdate(TEL)).thenReturn(Optional.of(user));
   }
 
   private static void codeAttendu(Throwable e, ErrorCode code) {
@@ -177,33 +184,13 @@ class PinServiceImplTest {
     }
 
     @Test
-    @DisplayName("repli sur une session d'un autre type : la session source est révoquée")
-    void repli() throws Exception {
-      UserSession web = session(ClientType.WEB);
-      LoginResponse jetons = new LoginResponse();
-      jetons.setRefreshToken("nouveau");
-      when(userSessionService.findActiveSession(user.getId(), ClientType.MOBILE))
-          .thenReturn(Optional.empty());
-      when(userSessionService.findAnyActiveSession(user.getId())).thenReturn(Optional.of(web));
-      when(userSessionService.decryptRefreshToken(web)).thenReturn("ancien");
-      when(keycloakAuthService.refreshToken("ancien")).thenReturn(jetons);
-      doThrow(new NotFoundException("déjà supprimée"))
-          .when(userSessionService)
-          .revokeSession(web.getId());
-
-      assertThat(service.loginWithPin(req(PIN, ClientType.MOBILE))).isSameAs(jetons);
-      verify(userSessionService).revokeSession(web.getId());
-      verify(userSessionService).createOrUpdateSession(user, ClientType.MOBILE, "nouveau", "Pixel");
-    }
-
-    @Test
     @DisplayName("aucune session active -> 401 PIN_SESSION_EXPIRED")
     void sansSession() {
       when(userSessionService.findActiveSession(user.getId(), ClientType.WEB))
           .thenReturn(Optional.empty());
-      when(userSessionService.findAnyActiveSession(user.getId())).thenReturn(Optional.empty());
       assertThatThrownBy(() -> service.loginWithPin(req(PIN, ClientType.WEB)))
           .satisfies(e -> codeAttendu(e, ErrorCode.PIN_SESSION_EXPIRED));
+      verify(userSessionService, never()).findAnyActiveSession(any());
     }
 
     @Test
@@ -234,12 +221,14 @@ class PinServiceImplTest {
     }
 
     @Test
-    @DisplayName("5e échec : verrouillage 30 min -> 429 PIN_LOCKED avec délai")
+    @DisplayName("5e échec : verrouillage 15 min (SE07) -> 429 PIN_LOCKED avec délai")
     void verrouillage() {
       user.setPinAttempts(Constants.Pin.MAX_ATTEMPTS - 1);
       assertThatThrownBy(() -> service.loginWithPin(req("000001", ClientType.WEB)))
           .satisfies(e -> codeAttendu(e, ErrorCode.PIN_LOCKED));
-      assertThat(user.getPinLockedUntil()).isAfter(LocalDateTime.now().plusMinutes(29));
+      assertThat(user.getPinLockedUntil())
+          .isAfter(LocalDateTime.now().plusMinutes(14))
+          .isBefore(LocalDateTime.now().plusMinutes(16));
       assertThat(user.getPinAttempts()).isZero();
     }
 
@@ -269,7 +258,7 @@ class PinServiceImplTest {
       user.setActive(false);
       assertThatThrownBy(() -> service.loginWithPin(req(PIN, ClientType.WEB)))
           .satisfies(e -> codeAttendu(e, ErrorCode.ACCOUNT_DISABLED));
-      when(userRepository.findByPhone(TEL)).thenReturn(Optional.empty());
+      when(userRepository.findByPhoneForUpdate(TEL)).thenReturn(Optional.empty());
       assertThatThrownBy(() -> service.loginWithPin(req(PIN, ClientType.WEB)))
           .isInstanceOf(NotFoundException.class);
     }
@@ -380,6 +369,250 @@ class PinServiceImplTest {
       assertThatThrownBy(() -> service.resetPin(req(PIN, PIN)))
           .isInstanceOf(NotFoundException.class);
       verify(userSessionService, never()).revokeAllSessions(any());
+    }
+  }
+
+  @Nested
+  @DisplayName("SE07 : échecs cumulés, OTP limités")
+  class Securite {
+
+    private PinLoginRequest faux() {
+      PinLoginRequest r = new PinLoginRequest();
+      r.setPhone(TEL);
+      r.setPin("000001");
+      r.setClientType(ClientType.WEB);
+      return r;
+    }
+
+    @BeforeEach
+    void pinConfigure() {
+      user.setPinHash(hashPin);
+      user.setPinCreatedAt(LocalDateTime.now().minusDays(1));
+    }
+
+    @Test
+    @DisplayName("10ᵉ échec cumulé : PIN invalidé, sessions révoquées → 401 PIN_DISABLED")
+    void invalidation() throws Exception {
+      user.setPinEchecsCumules(Constants.Pin.MAX_ECHECS_CUMULES - 1);
+      user.setPinAttempts(4);
+
+      assertThatThrownBy(() -> service.loginWithPin(faux()))
+          .satisfies(e -> codeAttendu(e, ErrorCode.PIN_DISABLED));
+
+      assertThat(user.getPinHash()).isNull();
+      assertThat(user.getPinEchecsCumules()).isZero();
+      assertThat(user.getPinAttempts()).isZero();
+      assertThat(user.getPinLockedUntil()).isNull();
+      verify(userSessionService).revokeAllSessions(user.getId());
+      verify(userRepository).save(user);
+    }
+
+    @Test
+    @DisplayName("le verrou de 15 min ne remet pas le cumul à zéro ; retryAfterSeconds = 900")
+    void cumulConserveAuVerrou() {
+      user.setPinAttempts(Constants.Pin.MAX_ATTEMPTS - 1);
+      user.setPinEchecsCumules(4);
+
+      assertThatThrownBy(() -> service.loginWithPin(faux()))
+          .satisfies(
+              e -> {
+                codeAttendu(e, ErrorCode.PIN_LOCKED);
+                assertThat(((CustomException) e).getDetails())
+                    .containsEntry("retryAfterSeconds", 900L);
+              });
+      assertThat(user.getPinEchecsCumules()).isEqualTo(5);
+      assertThat(user.getPinHash()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("configuration du PIN : cumul remis à zéro")
+    void configurationRemetLeCumul() throws Exception {
+      user.setPinEchecsCumules(7);
+      PinSetupRequest r = new PinSetupRequest();
+      r.setPin(PIN);
+      r.setConfirmPin(PIN);
+
+      service.setupPin(user.getKeycloakId(), r);
+
+      assertThat(user.getPinEchecsCumules()).isZero();
+    }
+
+    @Test
+    @DisplayName("envoi OTP du PIN : limite horaire appliquée avant le test d'existence")
+    void limiteAvantExistence() throws Exception {
+      when(userRepository.existsByPhone("221779999999")).thenReturn(false);
+
+      service.sendResetPinOtp("+221779999999");
+
+      verify(otpGarde).autoriserEnvoi("221779999999", P);
+      verify(otpRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("5ᵉ code OTP faux pour le PIN → OTP_TOO_MANY_ATTEMPTS")
+    void codeEpuise() {
+      OtpVerification otp =
+          OtpVerification.builder()
+              .phone(TEL)
+              .code("111111")
+              .purpose(P)
+              .expiresAt(LocalDateTime.now().plusMinutes(5))
+              .build();
+      when(otpRepository.findTopByPhoneAndPurposeAndUsedFalseOrderByCreatedAtDesc(TEL, P))
+          .thenReturn(Optional.of(otp));
+      when(otpGarde.enregistrerEchec(otp)).thenReturn(true);
+
+      assertThatThrownBy(() -> service.verifyResetPinOtp(TEL, "222222"))
+          .satisfies(e -> codeAttendu(e, ErrorCode.OTP_TOO_MANY_ATTEMPTS));
+    }
+  }
+
+  @Nested
+  @DisplayName("B53 : session de confiance par appareil")
+  class SessionDeConfiance {
+
+    private static final String APPAREIL = "appareil-awa-0001";
+
+    private UserSession sessionAppareil(boolean confiance) {
+      return UserSession.builder()
+          .id(UUID.randomUUID())
+          .user(user)
+          .clientType(ClientType.MOBILE)
+          .appareilId(APPAREIL)
+          .confiance(confiance)
+          .build();
+    }
+
+    private PinLoginRequest req(String appareilId) {
+      PinLoginRequest r = new PinLoginRequest();
+      r.setPhone(TEL);
+      r.setPin(PIN);
+      r.setClientType(ClientType.MOBILE);
+      r.setAppareilId(appareilId);
+      return r;
+    }
+
+    private PinSetupRequest setup(String motDePasse, String appareilId, ClientType type) {
+      PinSetupRequest r = new PinSetupRequest();
+      r.setPin(PIN);
+      r.setConfirmPin(PIN);
+      r.setMotDePasse(motDePasse);
+      r.setAppareilId(appareilId);
+      r.setClientType(type);
+      return r;
+    }
+
+    @BeforeEach
+    void pinConfigure() {
+      user.setPinHash(hashPin);
+      user.setPinCreatedAt(LocalDateTime.now().minusDays(1));
+    }
+
+    @Test
+    @DisplayName(
+        "PIN sur un appareil de confiance : jeton hors ligne rejoué, rotation, rejeu audité")
+    void rejeu() throws Exception {
+      UserSession s = sessionAppareil(true);
+      LoginResponse jetons = new LoginResponse();
+      jetons.setRefreshToken("hors-ligne-2");
+      when(userSessionService.trouverSessionAppareil(user.getId(), APPAREIL))
+          .thenReturn(Optional.of(s));
+      when(userSessionService.decryptRefreshToken(s)).thenReturn("hors-ligne-1");
+      when(keycloakAuthService.refreshToken("hors-ligne-1")).thenReturn(jetons);
+
+      assertThat(service.loginWithPin(req(APPAREIL))).isSameAs(jetons);
+
+      verify(userSessionService)
+          .enregistrerSessionAppareil(
+              user, ClientType.MOBILE, APPAREIL, "hors-ligne-2", null, true);
+      verify(userSessionService).tracerRejeu(s);
+      verify(userSessionService, never()).findActiveSession(any(), any());
+    }
+
+    @Test
+    @DisplayName("appareil inconnu : PIN seul refusé → PIN_SESSION_EXPIRED, aucun repli")
+    void nouvelAppareil() {
+      when(userSessionService.trouverSessionAppareil(user.getId(), "autre-appareil"))
+          .thenReturn(Optional.empty());
+
+      assertThatThrownBy(() -> service.loginWithPin(req("autre-appareil")))
+          .satisfies(e -> codeAttendu(e, ErrorCode.PIN_SESSION_EXPIRED));
+      verify(userSessionService, never()).findAnyActiveSession(any());
+    }
+
+    @Test
+    @DisplayName(
+        "jeton refusé par Keycloak (révoqué, expiré) → session purgée, PIN_SESSION_EXPIRED")
+    void jetonRefuse() throws Exception {
+      UserSession s = sessionAppareil(true);
+      when(userSessionService.trouverSessionAppareil(user.getId(), APPAREIL))
+          .thenReturn(Optional.of(s));
+      when(userSessionService.decryptRefreshToken(s)).thenReturn("revoque");
+      when(keycloakAuthService.refreshToken("revoque"))
+          .thenThrow(new UnAuthorizedException("expiré"));
+
+      assertThatThrownBy(() -> service.loginWithPin(req(APPAREIL)))
+          .satisfies(e -> codeAttendu(e, ErrorCode.PIN_SESSION_EXPIRED));
+      verify(userSessionService).revokeSession(s.getId());
+    }
+
+    @Test
+    @DisplayName("création du PIN avec le mot de passe : jeton hors ligne, appareil de confiance")
+    void setupAvecMotDePasse() throws Exception {
+      LoginResponse horsLigne = new LoginResponse();
+      horsLigne.setRefreshToken("hors-ligne");
+      when(keycloakAuthService.login(TEL, "Secret@2026", true)).thenReturn(horsLigne);
+
+      PinSetupResponse r =
+          service.setupPin(user.getKeycloakId(), setup("Secret@2026", APPAREIL, ClientType.MOBILE));
+
+      assertThat(r.isConfiance()).isTrue();
+      verify(userSessionService)
+          .enregistrerSessionAppareil(user, ClientType.MOBILE, APPAREIL, "hors-ligne", null, true);
+    }
+
+    @Test
+    @DisplayName("création du PIN : sans mot de passe pas de confiance ; SUPER_ADMIN jamais")
+    void setupSansConfiance() throws Exception {
+      assertThat(service.setupPin(user.getKeycloakId(), setup(null, null, null)).isConfiance())
+          .isFalse();
+      assertThat(service.setupPin(user.getKeycloakId(), setup(" ", APPAREIL, null)).isConfiance())
+          .isFalse();
+
+      when(roleRepository.existsByUserIdAndRole(user.getId(), UserRole.SUPER_ADMIN))
+          .thenReturn(true);
+      assertThat(
+              service
+                  .setupPin(user.getKeycloakId(), setup("Secret@2026", APPAREIL, ClientType.WEB))
+                  .isConfiance())
+          .isFalse();
+      verify(keycloakAuthService, never()).login(any(), any(), anyBoolean());
+      verify(userSessionService, never())
+          .enregistrerSessionAppareil(any(), any(), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    @DisplayName(
+        "création du PIN : appareilId manquant → 400 ; mot de passe faux → PIN non enregistré")
+    void setupRefus() throws Exception {
+      assertThatThrownBy(
+              () ->
+                  service.setupPin(
+                      user.getKeycloakId(), setup("Secret@2026", null, ClientType.WEB)))
+          .satisfies(e -> codeAttendu(e, ErrorCode.INVALID_PARAMETER));
+      assertThatThrownBy(
+              () -> service.setupPin(user.getKeycloakId(), setup("Secret@2026", APPAREIL, null)))
+          .satisfies(e -> codeAttendu(e, ErrorCode.INVALID_PARAMETER));
+
+      user.setPinHash(null);
+      when(keycloakAuthService.login(TEL, "faux", true))
+          .thenThrow(
+              new UnAuthorizedException("Identifiants incorrects", ErrorCode.INVALID_CREDENTIALS));
+      assertThatThrownBy(
+              () -> service.setupPin(user.getKeycloakId(), setup("faux", APPAREIL, ClientType.WEB)))
+          .satisfies(e -> codeAttendu(e, ErrorCode.INVALID_CREDENTIALS));
+      assertThat(user.getPinHash()).isNull();
+      verify(userRepository, never()).save(any());
     }
   }
 }

@@ -74,11 +74,15 @@ public class CompteServiceImpl implements CompteService {
     keycloakAuthService.resetPassword(user.getKeycloakId(), request.getNouveauMotDePasse());
     log.info("Mot de passe changé – userId={}", user.getId());
 
-    if (request.isDeconnecterAutresAppareils()) {
-      for (UserSession s : sessionRepository.findByUserIdOrderByLastUsedAtDesc(user.getId())) {
-        if (!estCourante(s, sessionIdCourante)) {
-          revoquer(s);
-        }
+    // Autres appareils : tous si demandé ; sinon au moins ceux de confiance (B53), dont le jeton
+    // hors ligne survivrait au changement de mot de passe
+    List<UserSession> aDeconnecter =
+        request.isDeconnecterAutresAppareils()
+            ? sessionRepository.findByUserIdOrderByLastUsedAtDesc(user.getId())
+            : sessionRepository.findByUserIdAndConfianceTrue(user.getId());
+    for (UserSession s : aDeconnecter) {
+      if (!estCourante(s, sessionIdCourante)) {
+        revoquer(s);
       }
     }
   }
@@ -102,6 +106,9 @@ public class CompteServiceImpl implements CompteService {
                     .expireLe(s.getExpiresAt())
                     .expiree(s.getExpiresAt() != null && s.getExpiresAt().isBefore(maintenant))
                     .courante(estCourante(s, sessionIdCourante))
+                    .confiance(s.isConfiance())
+                    .derniereUtilisation(s.getLastUsedAt())
+                    .appareilId(s.getAppareilId())
                     .build())
         .toList();
   }
@@ -159,10 +166,19 @@ public class CompteServiceImpl implements CompteService {
     return tontineId;
   }
 
-  /** Révoque la session Keycloak (non bloquant) puis supprime la session locale. */
+  /**
+   * Révoque la session Keycloak (non bloquant) puis supprime la session locale. Session de
+   * confiance (B53) : le jeton hors ligne est révoqué (endpoint de révocation), pas seulement
+   * effacé.
+   */
   private void revoquer(UserSession session) {
     try {
-      keycloakAuthService.logout(userSessionService.decryptRefreshToken(session));
+      String jeton = userSessionService.decryptRefreshToken(session);
+      if (session.isConfiance()) {
+        keycloakAuthService.revoquerJeton(jeton);
+      } else {
+        keycloakAuthService.logout(jeton);
+      }
     } catch (Exception e) {
       log.warn("Révocation Keycloak impossible (session expirée ?) : {}", e.getMessage());
     }

@@ -10,6 +10,7 @@ import com.africa.dinthialma_backend.auth.entity.User;
 import com.africa.dinthialma_backend.auth.mapper.UserMapper;
 import com.africa.dinthialma_backend.auth.repository.PhoneChangeRequestRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRepository;
+import com.africa.dinthialma_backend.auth.service.interfaces.OtpGardeService;
 import com.africa.dinthialma_backend.auth.service.interfaces.UserProfileService;
 import com.africa.dinthialma_backend.auth.service.interfaces.UserSessionService;
 import com.africa.dinthialma_backend.common.constants.Constants;
@@ -56,6 +57,7 @@ public class UserProfileServiceImpl implements UserProfileService {
   private final WhatsappService whatsappService;
   private final Keycloak keycloakAdminClient;
   private final KeycloakProperties keycloakProperties;
+  private final OtpGardeService otpGarde;
 
   // ─── Profil ───────────────────────────────────────────────────────────
 
@@ -117,6 +119,8 @@ public class UserProfileServiceImpl implements UserProfileService {
           ErrorCode.PHONE_ALREADY_USED);
     }
 
+    otpGarde.autoriserEnvoi(newPhone, Constants.OtpPurpose.PHONE_CHANGE);
+
     // Supprimer les demandes précédentes de cet utilisateur
     phoneChangeRequestRepository.deleteAllByUserId(user.getId());
 
@@ -158,6 +162,9 @@ public class UserProfileServiceImpl implements UserProfileService {
     }
 
     if (!changeReq.getOtpCode().equals(request.getCode())) {
+      if (otpGarde.enregistrerEchec(changeReq)) {
+        throw OtpGardeService.erreurCodeFaux(true);
+      }
       throw new BadRequestException("Code OTP incorrect", ErrorCode.OTP_INVALID);
     }
 

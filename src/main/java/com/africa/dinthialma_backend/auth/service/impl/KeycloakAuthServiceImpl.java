@@ -49,6 +49,12 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
 
   @Override
   public LoginResponse login(String username, String password) throws CustomException {
+    return login(username, password, false);
+  }
+
+  @Override
+  public LoginResponse login(String username, String password, boolean horsLigne)
+      throws CustomException {
     log.debug("Tentative de connexion Keycloak pour l'utilisateur : {}", username);
 
     MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
@@ -57,7 +63,8 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
     formData.add("client_secret", keycloakProperties.getClientSecret());
     formData.add("username", username);
     formData.add("password", password);
-    formData.add("scope", "openid profile email");
+    formData.add(
+        "scope", horsLigne ? "openid profile email offline_access" : "openid profile email");
     log.debug("Token URL: {}", buildTokenUrl());
     try {
       LoginResponse response =
@@ -111,6 +118,28 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
     } catch (Exception e) {
       // Non bloquant : le token Keycloak expire de toute façon
       log.warn("Impossible de révoquer le token Keycloak (non bloquant) : {}", e.getMessage());
+    }
+  }
+
+  @Override
+  public void revoquerJeton(String refreshToken) {
+    MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
+    formData.add("client_id", keycloakProperties.getClientId());
+    formData.add("client_secret", keycloakProperties.getClientSecret());
+    formData.add("token", refreshToken);
+    formData.add("token_type_hint", "refresh_token");
+    try {
+      restClient
+          .post()
+          .uri(buildRevokeUrl())
+          .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+          .body(formData)
+          .retrieve()
+          .toBodilessEntity();
+      log.info("Jeton Keycloak révoqué");
+    } catch (Exception e) {
+      // Non bloquant : la session locale est supprimée de toute façon
+      log.warn("Révocation du jeton Keycloak impossible (non bloquant) : {}", e.getMessage());
     }
   }
 
@@ -354,6 +383,13 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
         + "/realms/"
         + keycloakProperties.getRealm()
         + "/protocol/openid-connect/token";
+  }
+
+  private String buildRevokeUrl() {
+    return keycloakProperties.getAuthServerUrl()
+        + "/realms/"
+        + keycloakProperties.getRealm()
+        + "/protocol/openid-connect/revoke";
   }
 
   private String buildLogoutUrl() {

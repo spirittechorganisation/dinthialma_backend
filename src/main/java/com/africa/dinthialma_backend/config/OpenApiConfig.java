@@ -55,7 +55,7 @@ public class OpenApiConfig {
                 .contact(
                     new Contact()
                         .name("Spirit Tech Revolution")
-                        .email("spirittechrevolution@gmail.com")))
+                        .email("contact@spirittechrevolution.com")))
 
         // ── Ordre d'affichage des tags ────────────────────────────────────
         .tags(

@@ -60,14 +60,24 @@ public enum ErrorCode {
   PIN_LOCKED,
   /** Aucune session active pour le PIN : connexion complète requise. */
   PIN_SESSION_EXPIRED,
+  /**
+   * PIN invalidé après 10 échecs cumulés (SE07) : connexion par mot de passe (ou réinitialisation
+   * du PIN par OTP) obligatoire, puis nouveau PIN.
+   */
+  PIN_DISABLED,
 
   // ─── Codes SMS (OTP) ────────────────────────────────────────────────────
   OTP_INVALID,
   OTP_EXPIRED,
   /** Étape finale appelée sans OTP vérifié (ou déjà consommé) : refaire l'étape SMS. */
   OTP_NOT_VERIFIED,
-  /** Réservé : aucune limitation d'envoi d'OTP n'existe encore côté backend. */
+  /**
+   * Trop d'envois d'OTP pour ce numéro (SE07 : 3 par heure, tous motifs) ; {@code
+   * data.retryAfterSeconds}.
+   */
   OTP_RATE_LIMITED,
+  /** Trop d'essais faux sur ce code (SE07 : 5) : il est invalidé, en demander un nouveau. */
+  OTP_TOO_MANY_ATTEMPTS,
 
   // ─── Membres ────────────────────────────────────────────────────────────
   MEMBER_ALREADY_IN_TONTINE,

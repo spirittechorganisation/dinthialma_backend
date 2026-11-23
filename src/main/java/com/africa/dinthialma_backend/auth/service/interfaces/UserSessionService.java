@@ -69,4 +69,35 @@ public interface UserSessionService {
    * @return refresh token en clair
    */
   String decryptRefreshToken(UserSession session) throws CustomException;
+
+  // ─── Sessions par appareil (B53) ─────────────────────────────────────
+
+  /**
+   * Crée ou met à jour la session de cet appareil ({@code appareilId} stable, gardé par le front).
+   * Le refresh token est chiffré ; avec {@code confiance}, c'est un jeton hors ligne. Si la session
+   * de l'appareil portait déjà un autre jeton hors ligne, il est révoqué chez Keycloak avant d'être
+   * remplacé (rotation, pas de session hors ligne orpheline).
+   */
+  UserSession enregistrerSessionAppareil(
+      User user,
+      ClientType clientType,
+      String appareilId,
+      String refreshToken,
+      String deviceInfo,
+      boolean confiance)
+      throws CustomException;
+
+  /** Session active de cet appareil (B53). */
+  Optional<UserSession> trouverSessionAppareil(UUID userId, String appareilId);
+
+  /**
+   * Après un {@code POST /v1/auth/refresh} : si l'ancien refresh token est celui d'une session de
+   * l'utilisateur, la session reçoit le nouveau (rotation), pour que le PIN rejoue toujours le
+   * jeton valide.
+   */
+  void synchroniserJeton(UUID userId, String ancienRefreshToken, String nouveauRefreshToken)
+      throws CustomException;
+
+  /** Trace le rejeu d'une session de confiance par le PIN (audit, sans valeur de jeton). */
+  void tracerRejeu(UserSession session);
 }

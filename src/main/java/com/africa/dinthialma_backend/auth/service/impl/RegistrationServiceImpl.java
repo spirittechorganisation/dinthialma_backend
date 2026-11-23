@@ -13,6 +13,7 @@ import com.africa.dinthialma_backend.auth.repository.OtpVerificationRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRoleAssignmentRepository;
 import com.africa.dinthialma_backend.auth.service.interfaces.KeycloakAuthService;
+import com.africa.dinthialma_backend.auth.service.interfaces.OtpGardeService;
 import com.africa.dinthialma_backend.auth.service.interfaces.RegistrationService;
 import com.africa.dinthialma_backend.common.constants.Constants;
 import com.africa.dinthialma_backend.common.constants.ResponseMessageConstants;
@@ -53,6 +54,7 @@ public class RegistrationServiceImpl implements RegistrationService {
   private final UserRoleAssignmentRepository userRoleAssignmentRepository;
   private final KeycloakAuthService keycloakAuthService;
   private final WhatsappService whatsappService;
+  private final OtpGardeService otpGarde;
 
   // ─── Étape 1 : Envoi OTP ──────────────────────────────────────────
 
@@ -73,6 +75,7 @@ public class RegistrationServiceImpl implements RegistrationService {
       }
     }
 
+    otpGarde.autoriserEnvoi(phone, Constants.OtpPurpose.REGISTRATION);
     otpVerificationRepository.deleteAllByPhoneAndPurpose(phone, Constants.OtpPurpose.REGISTRATION);
 
     String code = OtpUtils.generateOtp();
@@ -117,8 +120,7 @@ public class RegistrationServiceImpl implements RegistrationService {
 
     if (!otp.getCode().equals(request.getCode())) {
       log.warn("Code OTP incorrect pour le numéro : {}", phone);
-      throw new BadRequestException(
-          ResponseMessageConstants.AUTH_OTP_INVALID, ErrorCode.OTP_INVALID);
+      throw OtpGardeService.erreurCodeFaux(otpGarde.enregistrerEchec(otp));
     }
 
     otp.setVerified(true);

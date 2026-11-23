@@ -16,6 +16,7 @@ import com.africa.dinthialma_backend.auth.repository.UserRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRoleAssignmentRepository;
 import com.africa.dinthialma_backend.auth.repository.UserSpecifications;
 import com.africa.dinthialma_backend.auth.service.interfaces.KeycloakAuthService;
+import com.africa.dinthialma_backend.auth.service.interfaces.UserSessionService;
 import com.africa.dinthialma_backend.common.constants.ResponseMessageConstants;
 import com.africa.dinthialma_backend.common.exception.BadRequestException;
 import com.africa.dinthialma_backend.common.exception.CustomException;
@@ -75,6 +76,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
   private final TontineMembreRepository membreRepository;
   private final CotisationRepository cotisationRepository;
   private final KeycloakAuthService keycloakAuthService;
+  private final UserSessionService userSessionService;
   private final DemandeAdhesionRepository demandeRepository;
   private final PrioriteJackpotRepository prioriteRepository;
   private final SuiviTourService suiviTour;
@@ -195,6 +197,8 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     } catch (Exception e) {
       log.warn("Keycloak indisponible lors de la désactivation de {} : {}", userId, e.getMessage());
     }
+    // B53 : tous les appareils déconnectés, jetons hors ligne révoqués chez Keycloak
+    userSessionService.revokeAllSessions(target.getId());
 
     log.info("Compte désactivé – userId={} par superAdmin={}", userId, caller.getId());
     return userMapper.toAdmin(target);

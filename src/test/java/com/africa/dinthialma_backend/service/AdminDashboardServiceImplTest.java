@@ -26,6 +26,7 @@ import com.africa.dinthialma_backend.auth.mapper.UserMapper;
 import com.africa.dinthialma_backend.auth.repository.UserRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRoleAssignmentRepository;
 import com.africa.dinthialma_backend.auth.service.interfaces.KeycloakAuthService;
+import com.africa.dinthialma_backend.auth.service.interfaces.UserSessionService;
 import com.africa.dinthialma_backend.common.exception.BadRequestException;
 import com.africa.dinthialma_backend.common.exception.CustomException;
 import com.africa.dinthialma_backend.common.exception.ForbiddenException;
@@ -89,6 +90,7 @@ class AdminDashboardServiceImplTest {
   @Mock private DemandeAdhesionRepository demandeRepository;
   @Mock private PrioriteJackpotRepository prioriteRepository;
   @Mock private SuiviTourService suiviTour;
+  @Mock private UserSessionService userSessionService;
   @InjectMocks private AdminDashboardServiceImpl service;
 
   private User superAdmin;
@@ -210,6 +212,8 @@ class AdminDashboardServiceImplTest {
           .disableUser(cible.getKeycloakId());
       assertThat(service.disableUser(kc, cible.getId()).isActive()).isFalse();
       verify(userRepository).save(cible);
+      // B53 : tous ses appareils déconnectés, jetons hors ligne révoqués
+      verify(userSessionService).revokeAllSessions(cible.getId());
     }
 
     @Test

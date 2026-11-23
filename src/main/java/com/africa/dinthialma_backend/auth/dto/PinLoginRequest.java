@@ -42,4 +42,16 @@ public class PinLoginRequest {
           "Informations appareil (optionnel) : user-agent navigateur (WEB) ou device_id (MOBILE)",
       example = "iPhone 15 / iOS 17")
   private String deviceInfo;
+
+  @Schema(
+      description =
+          "Identifiant stable de l'appareil (B53), généré une fois par le front (UUID) et gardé"
+              + " dans son stockage (localStorage, stockage sécurisé). Sans lui, aucune session de"
+              + " confiance : le PIN ne survit pas à SSO Session Idle (30 min).",
+      example = "6f1c2a9e-4b7d-4c1a-9e2f-0a1b2c3d4e5f",
+      nullable = true)
+  @Pattern(
+      regexp = "[A-Za-z0-9._-]{8,100}",
+      message = "appareilId : 8 à 100 caractères (lettres, chiffres, . _ -)")
+  private String appareilId;
 }

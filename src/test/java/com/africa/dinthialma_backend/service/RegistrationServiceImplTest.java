@@ -25,6 +25,7 @@ import com.africa.dinthialma_backend.auth.repository.UserRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRoleAssignmentRepository;
 import com.africa.dinthialma_backend.auth.service.impl.RegistrationServiceImpl;
 import com.africa.dinthialma_backend.auth.service.interfaces.KeycloakAuthService;
+import com.africa.dinthialma_backend.auth.service.interfaces.OtpGardeService;
 import com.africa.dinthialma_backend.common.constants.Constants;
 import com.africa.dinthialma_backend.common.exception.BadRequestException;
 import com.africa.dinthialma_backend.common.exception.ConflictException;
@@ -57,6 +58,7 @@ class RegistrationServiceImplTest {
   @Mock private UserRoleAssignmentRepository roleRepository;
   @Mock private KeycloakAuthService keycloakAuthService;
   @Mock private WhatsappService whatsappService;
+  @Mock private OtpGardeService otpGarde;
   @InjectMocks private RegistrationServiceImpl service;
 
   private OtpVerification otpVerifie;
