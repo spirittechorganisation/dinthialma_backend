@@ -6,6 +6,7 @@ import com.africa.dinthialma_backend.auth.dto.LogoutRequest;
 import com.africa.dinthialma_backend.auth.dto.PinLoginRequest;
 import com.africa.dinthialma_backend.auth.dto.PinResetRequest;
 import com.africa.dinthialma_backend.auth.dto.PinSetupRequest;
+import com.africa.dinthialma_backend.auth.dto.PinSetupResponse;
 import com.africa.dinthialma_backend.auth.dto.RefreshTokenRequest;
 import com.africa.dinthialma_backend.auth.dto.RegisterCompleteRequest;
 import com.africa.dinthialma_backend.auth.dto.RegisterResponse;
@@ -88,7 +89,10 @@ public class AuthController {
   @PostMapping("/refresh")
   @Operation(
       summary = "Rafraîchir les tokens JWT",
-      description = "Échange un refresh_token Keycloak valide contre de nouveaux tokens JWT.")
+      description =
+          "Échange un refresh_token Keycloak valide (normal ou hors ligne, B53) contre de nouveaux"
+              + " tokens JWT. Si ce jeton est celui de la session d'un appareil, la session reçoit"
+              + " le nouveau (rotation) : le PIN rejoue toujours le jeton valide.")
   @ApiResponses({
     @ApiResponse(
         responseCode = "200",
@@ -98,7 +102,7 @@ public class AuthController {
   })
   public ResponseEntity<CustomResponse> refresh(@RequestBody @Valid RefreshTokenRequest request)
       throws CustomException {
-    LoginResponse tokens = keycloakAuthService.refreshToken(request.getRefreshToken());
+    LoginResponse tokens = loginService.rafraichir(request.getRefreshToken());
     return ResponseEntity.ok(
         new CustomResponse(
             Constants.Message.SUCCESS_BODY,
@@ -114,13 +118,17 @@ public class AuthController {
       summary = "Déconnexion – invalide la session Keycloak et supprime la session PIN",
       description =
           "Révoque le refresh token côté Keycloak et supprime la session PIN en base."
-              + " `clientType` optionnel : si absent, toutes les sessions de l'utilisateur sont"
-              + " supprimées (déconnexion totale de tous les appareils).")
+              + " `appareilId` (B53) : seule la session de cet appareil est supprimée et son jeton"
+              + " hors ligne révoqué chez Keycloak. Sinon `clientType` ; si absent, toutes les"
+              + " sessions de l'utilisateur sont supprimées (déconnexion totale de tous les"
+              + " appareils). La « déconnexion douce » (retour à l'écran PIN) n'appelle pas cet"
+              + " endpoint : le front oublie seulement le jeton d'accès.")
   @ApiResponse(responseCode = "200", description = "Déconnexion réussie")
   public ResponseEntity<CustomResponse> logout(@RequestBody @Valid LogoutRequest request)
       throws CustomException {
     keycloakAuthService.logout(request.getRefreshToken());
-    loginService.logout(request.getRefreshToken(), request.getClientType());
+    loginService.logout(
+        request.getRefreshToken(), request.getClientType(), request.getAppareilId());
     return ResponseEntity.ok(
         new CustomResponse(
             Constants.Message.SUCCESS_BODY,
@@ -261,7 +269,13 @@ public class AuthController {
   @PostMapping("/pin/setup")
   @Operation(
       summary = "Configurer le code PIN",
-      description = "Accessible uniquement après connexion complète (JWT requis).",
+      description =
+          "Accessible uniquement après connexion complète (JWT requis).\n\n"
+              + "**B53** : avec `motDePasse`, `appareilId` et `clientType`, l'appareil devient de"
+              + " confiance (jeton hors ligne Keycloak, chiffré en base) : le PIN y suffit ensuite"
+              + " pendant des mois, sans dépendre de SSO Session Idle. Réponse `{confiance}`."
+              + " Mot de passe faux → 401 `INVALID_CREDENTIALS` (PIN non enregistré). SUPER_ADMIN :"
+              + " jamais de session de confiance.",
       security = @SecurityRequirement(name = "bearerAuth"))
   @ApiResponses({
     @ApiResponse(responseCode = "200", description = "Code PIN configuré"),
@@ -272,13 +286,13 @@ public class AuthController {
       @RequestBody @Valid PinSetupRequest request, HttpServletRequest httpRequest)
       throws CustomException {
     String keycloakId = requestHeaderParser.extractKeycloakId(httpRequest);
-    pinService.setupPin(keycloakId, request);
+    PinSetupResponse response = pinService.setupPin(keycloakId, request);
     return ResponseEntity.ok(
         new CustomResponse(
             Constants.Message.SUCCESS_BODY,
             Constants.Status.OK,
             ResponseMessageConstants.AUTH_PIN_SETUP_SUCCESS,
-            null));
+            response));
   }
 
   // ─── PIN – Connexion rapide ───────────────────────────────────────

@@ -38,6 +38,10 @@ public class OtpVerification extends BaseEntity {
   @Column(name = "verified", nullable = false)
   private boolean verified = false;
 
+  /** Essais faux sur ce code (SE07, V045) : au-delà de 5, le code est invalidé. */
+  @Column(name = "tentatives", nullable = false)
+  private int tentatives = 0;
+
   public boolean isExpired() {
     return LocalDateTime.now().isAfter(expiresAt);
   }

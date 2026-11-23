@@ -8,6 +8,7 @@ import com.africa.dinthialma_backend.auth.entity.User;
 import com.africa.dinthialma_backend.auth.repository.OtpVerificationRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRepository;
 import com.africa.dinthialma_backend.auth.service.interfaces.KeycloakAuthService;
+import com.africa.dinthialma_backend.auth.service.interfaces.OtpGardeService;
 import com.africa.dinthialma_backend.auth.service.interfaces.PasswordResetService;
 import com.africa.dinthialma_backend.auth.service.interfaces.UserSessionService;
 import com.africa.dinthialma_backend.common.constants.Constants;
@@ -41,6 +42,7 @@ public class PasswordResetServiceImpl implements PasswordResetService {
   private final KeycloakAuthService keycloakAuthService;
   private final UserSessionService userSessionService;
   private final WhatsappService whatsappService;
+  private final OtpGardeService otpGarde;
 
   // ─── Étape 1 : Envoi OTP (anti-énumération) ────────────────────────
 
@@ -49,6 +51,9 @@ public class PasswordResetServiceImpl implements PasswordResetService {
   public void sendForgotPasswordOtp(SendOtpRequest request) throws CustomException {
     String phone = PhoneUtils.normalize(request.getPhone().trim());
     log.debug("Demande OTP reset mot de passe pour : {}", phone);
+
+    // Limite d'envoi appliquée avant le test d'existence : même réponse pour un numéro inconnu
+    otpGarde.autoriserEnvoi(phone, Constants.OtpPurpose.RESET_PASSWORD);
 
     // Anti-énumération : ne jamais révéler si le numéro existe
     if (!userRepository.existsByPhone(phone)) {
@@ -107,8 +112,7 @@ public class PasswordResetServiceImpl implements PasswordResetService {
 
     if (!otp.getCode().equals(request.getCode())) {
       log.warn("Code OTP reset mot de passe incorrect pour : {}", phone);
-      throw new BadRequestException(
-          ResponseMessageConstants.AUTH_OTP_INVALID, ErrorCode.OTP_INVALID);
+      throw OtpGardeService.erreurCodeFaux(otpGarde.enregistrerEchec(otp));
     }
 
     otp.setVerified(true);

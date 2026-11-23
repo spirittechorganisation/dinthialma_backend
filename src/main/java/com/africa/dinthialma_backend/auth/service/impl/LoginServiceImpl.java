@@ -2,10 +2,13 @@ package com.africa.dinthialma_backend.auth.service.impl;
 
 import com.africa.dinthialma_backend.auth.codeList.AccountStatus;
 import com.africa.dinthialma_backend.auth.codeList.ClientType;
+import com.africa.dinthialma_backend.auth.codeList.UserRole;
 import com.africa.dinthialma_backend.auth.dto.LoginRequest;
 import com.africa.dinthialma_backend.auth.dto.LoginResponse;
 import com.africa.dinthialma_backend.auth.entity.User;
+import com.africa.dinthialma_backend.auth.entity.UserSession;
 import com.africa.dinthialma_backend.auth.repository.UserRepository;
+import com.africa.dinthialma_backend.auth.repository.UserRoleAssignmentRepository;
 import com.africa.dinthialma_backend.auth.service.interfaces.KeycloakAuthService;
 import com.africa.dinthialma_backend.auth.service.interfaces.LoginService;
 import com.africa.dinthialma_backend.auth.service.interfaces.UserSessionService;
@@ -49,6 +52,7 @@ public class LoginServiceImpl implements LoginService {
   private final UserRepository userRepository;
   private final KeycloakAuthService keycloakAuthService;
   private final UserSessionService userSessionService;
+  private final UserRoleAssignmentRepository roleAssignmentRepository;
 
   @Override
   @Transactional
@@ -83,12 +87,27 @@ public class LoginServiceImpl implements LoginService {
       }
 
       // ── 2. Authentification Keycloak ──────────────────────────────
+      // B53 : appareil identifié + PIN configuré + pas SUPER_ADMIN → jeton hors ligne
+      boolean confiance = sessionDeConfiancePossible(user, request.getAppareilId());
       log.debug("[Login] username Keycloak : {}", user.getPhone());
-      LoginResponse tokens = keycloakAuthService.login(user.getPhone(), request.getPassword());
+      LoginResponse tokens =
+          confiance
+              ? keycloakAuthService.login(user.getPhone(), request.getPassword(), true)
+              : keycloakAuthService.login(user.getPhone(), request.getPassword());
 
       // ── 3. Création / mise à jour de la session PIN ───────────────
-      userSessionService.createOrUpdateSession(
-          user, request.getClientType(), tokens.getRefreshToken(), request.getDeviceInfo());
+      if (request.getAppareilId() != null) {
+        userSessionService.enregistrerSessionAppareil(
+            user,
+            request.getClientType(),
+            request.getAppareilId(),
+            tokens.getRefreshToken(),
+            request.getDeviceInfo(),
+            confiance);
+      } else {
+        userSessionService.createOrUpdateSession(
+            user, request.getClientType(), tokens.getRefreshToken(), request.getDeviceInfo());
+      }
 
       tokens.setPinConfigured(user.getPinHash() != null);
       log.info(
@@ -106,7 +125,61 @@ public class LoginServiceImpl implements LoginService {
     return keycloakAuthService.login(identifier, request.getPassword());
   }
 
+  /**
+   * Session de confiance (jeton hors ligne) possible : appareil identifié, PIN configuré, compte
+   * autre que SUPER_ADMIN (session courte, 2FA prévue en SE16).
+   */
+  private boolean sessionDeConfiancePossible(User user, String appareilId) {
+    return appareilId != null
+        && user.getPinHash() != null
+        && !roleAssignmentRepository.existsByUserIdAndRole(user.getId(), UserRole.SUPER_ADMIN);
+  }
+
+  // ─── Rafraîchissement ────────────────────────────────────────────────
+
+  @Override
+  @Transactional
+  public LoginResponse rafraichir(String refreshToken) throws CustomException {
+    LoginResponse tokens = keycloakAuthService.refreshToken(refreshToken);
+    String keycloakId = extractSubFromJwt(refreshToken);
+    if (keycloakId != null && tokens.getRefreshToken() != null) {
+      Optional<User> user = userRepository.findByKeycloakId(keycloakId);
+      if (user.isPresent()) {
+        userSessionService.synchroniserJeton(
+            user.get().getId(), refreshToken, tokens.getRefreshToken());
+      }
+    }
+    return tokens;
+  }
+
   // ─── Déconnexion ─────────────────────────────────────────────────────
+
+  @Override
+  @Transactional
+  public void logout(String refreshToken, ClientType clientType, String appareilId) {
+    if (appareilId == null) {
+      logout(refreshToken, clientType);
+      return;
+    }
+    String keycloakId = extractSubFromJwt(refreshToken);
+    if (keycloakId == null) {
+      log.warn("[Logout] keycloakId illisible dans le refresh token – session non supprimée");
+      return;
+    }
+    userRepository
+        .findByKeycloakId(keycloakId)
+        .flatMap(user -> userSessionService.trouverSessionAppareil(user.getId(), appareilId))
+        .ifPresent(this::supprimerSession);
+  }
+
+  private void supprimerSession(UserSession session) {
+    try {
+      userSessionService.revokeSession(session.getId());
+      log.info("[Logout] Session de l'appareil supprimée – sessionId={}", session.getId());
+    } catch (CustomException e) {
+      log.warn("[Logout] Impossible de révoquer la session {}", session.getId());
+    }
+  }
 
   @Override
   @Transactional

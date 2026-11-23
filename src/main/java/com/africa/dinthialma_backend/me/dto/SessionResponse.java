@@ -39,4 +39,18 @@ public class SessionResponse {
 
   @Schema(description = "true pour la session de l'appareil qui fait la requête")
   private boolean courante;
+
+  @Schema(
+      description =
+          "true si l'appareil est de confiance (B53) : jeton hors ligne, le PIN y suffit pendant"
+              + " des mois")
+  private boolean confiance;
+
+  @Schema(description = "Dernière utilisation (connexion, PIN ou rafraîchissement) – B53")
+  private LocalDateTime derniereUtilisation;
+
+  @Schema(
+      description = "Identifiant stable de l'appareil envoyé par le front (B53), null avant B53",
+      nullable = true)
+  private String appareilId;
 }

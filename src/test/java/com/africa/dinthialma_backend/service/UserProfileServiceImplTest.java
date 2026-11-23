@@ -20,7 +20,9 @@ import com.africa.dinthialma_backend.auth.mapper.UserMapper;
 import com.africa.dinthialma_backend.auth.repository.PhoneChangeRequestRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRepository;
 import com.africa.dinthialma_backend.auth.service.impl.UserProfileServiceImpl;
+import com.africa.dinthialma_backend.auth.service.interfaces.OtpGardeService;
 import com.africa.dinthialma_backend.auth.service.interfaces.UserSessionService;
+import com.africa.dinthialma_backend.common.constants.Constants;
 import com.africa.dinthialma_backend.common.exception.BadRequestException;
 import com.africa.dinthialma_backend.common.exception.ConflictException;
 import com.africa.dinthialma_backend.common.exception.ErrorCode;
@@ -59,6 +61,7 @@ class UserProfileServiceImplTest {
 
   @Mock private UserResource userResource;
 
+  @Mock private OtpGardeService otpGarde;
   private UserProfileServiceImpl service;
   private User user;
   private UserRepresentation representation;
@@ -75,7 +78,8 @@ class UserProfileServiceImplTest {
             userSessionService,
             whatsappService,
             keycloak,
-            props);
+            props,
+            otpGarde);
     user = Fixtures.user("Awa");
     user.setEmail("awa@test.sn");
     representation = new UserRepresentation();
@@ -245,6 +249,27 @@ class UserProfileServiceImplTest {
             BadRequestException.class,
             e -> assertThat(e.getCode()).isEqualTo(ErrorCode.OTP_INVALID));
     verify(userSessionService, never()).revokeAllSessions(any());
+  }
+
+  @Test
+  @DisplayName("SE07 : 5ᵉ code faux → OTP_TOO_MANY_ATTEMPTS ; envoi soumis à la limite horaire")
+  void garde() throws Exception {
+    PhoneChangeRequestEntity d = demande(LocalDateTime.now().plusMinutes(5));
+    when(phoneChangeRepository.findTopByUserIdAndNewPhoneAndVerifiedFalseOrderByCreatedAtDesc(
+            user.getId(), NOUVEAU))
+        .thenReturn(Optional.of(d));
+    when(otpGarde.enregistrerEchec(d)).thenReturn(true);
+
+    assertThatThrownBy(
+            () -> service.verifyPhoneChange(user.getKeycloakId(), verification("000000")))
+        .isInstanceOfSatisfying(
+            BadRequestException.class,
+            e -> assertThat(e.getCode()).isEqualTo(ErrorCode.OTP_TOO_MANY_ATTEMPTS));
+
+    PhoneChangeRequest req = new PhoneChangeRequest();
+    req.setNewPhone("+221779999999");
+    service.requestPhoneChange(user.getKeycloakId(), req);
+    verify(otpGarde).autoriserEnvoi("221779999999", Constants.OtpPurpose.PHONE_CHANGE);
   }
 
   @Test

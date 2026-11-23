@@ -41,17 +41,17 @@
 
 | Endpoint | Méthode | Public | USER | MEMBER | ADMIN | SUPER_ADMIN | Notes |
 |----------|---------|--------|------|--------|-------|-------------|-------|
-| `/login` | POST | ✅ | ✅ | ✅ | ✅ | ✅ | username(phone/email) + password + clientType |
+| `/login` | POST | ✅ | ✅ | ✅ | ✅ | ✅ | username(phone/email) + password + clientType ; `appareilId` (B53) : appareil identifié + PIN configuré + pas SUPER_ADMIN → jeton hors ligne, session de confiance |
 | `/logout` | POST | ✅ | ✅ | ✅ | ✅ | ✅ | révoque session Keycloak |
-| `/refresh` | POST | ✅ | ✅ | ✅ | ✅ | ✅ | refresh_token → nouveaux tokens |
-| `/register/send-otp` | POST | ✅ | – | – | – | – | envoie OTP SMS |
+| `/refresh` | POST | ✅ | ✅ | ✅ | ✅ | ✅ | refresh_token (normal ou hors ligne) → nouveaux tokens ; la session de l'appareil reçoit le nouveau (rotation, B53) |
+| `/register/send-otp` | POST | ✅ | – | – | – | – | envoie OTP ; 3 envois / numéro / heure tous motifs (`OTP_RATE_LIMITED`), 5 essais par code (`OTP_TOO_MANY_ATTEMPTS`) – SE07 |
 | `/register/verify-otp` | POST | ✅ | – | – | – | – | vérifie OTP |
 | `/register/complete` | POST | ✅ | – | – | – | – | finalise inscription ; avec `clientType` (+`deviceInfo`) : connexion automatique, jetons à plat dans la réponse comme `/login` |
 | `/forgot-password/send-otp` | POST | ✅ | – | – | – | – | anti-énumération |
 | `/forgot-password/verify-otp` | POST | ✅ | – | – | – | – | |
 | `/forgot-password/reset` | POST | ✅ | – | – | – | – | |
-| `/pin/setup` | POST | ❌ | ✅ | ✅ | ✅ | ✅ | 🔒 JWT requis |
-| `/login-pin` | POST | ✅ | ✅ | ✅ | ✅ | ✅ | nécessite session active |
+| `/pin/setup` | POST | ❌ | ✅ | ✅ | ✅ | ✅ | 🔒 JWT requis ; `motDePasse` + `appareilId` + `clientType` facultatifs (B53) → appareil de confiance, réponse `{confiance}` |
+| `/login-pin` | POST | ✅ | ✅ | ✅ | ✅ | ✅ | session de **cet** appareil (`appareilId`, B53), aucun repli ; refus Keycloak ou pas de session → `PIN_SESSION_EXPIRED` ; 5 échecs → `PIN_LOCKED` 15 min ; 10 cumulés → `PIN_DISABLED` (SE07) |
 | `/pin/reset/send-otp` | POST | ✅ | – | – | – | – | |
 | `/pin/reset/verify-otp` | POST | ✅ | – | – | – | – | |
 | `/pin/reset` | POST | ✅ | – | – | – | – | |
@@ -184,8 +184,8 @@
 | `/qr/regenerer` | POST | ✅ | ✅ | ✅ | ✅ | 🔒 nouveau jeton, l'ancien → 404 |
 | `/activite/export` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 export CSV du fil (mêmes filtres), `;` + BOM UTF-8, 10 000 lignes max |
 | `/password` | POST | ✅ | ✅ | ✅ | ✅ | 🔒 changer de mot de passe (ancien vérifié) ; `deconnecterAutresAppareils` ; codes `CURRENT_PASSWORD_INVALID`, `PASSWORD_UNCHANGED` |
-| `/sessions` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 appareils connectés (1 session par clientType), `courante` via le `sid` du JWT |
-| `/sessions/{id}` | DELETE | ✅ | ✅ | ✅ | ✅ | 🔒 déconnexion à distance (révocation Keycloak + suppression) ; 404 si pas à moi |
+| `/sessions` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 appareils connectés (1 session par `appareilId`, B53 ; avant : par clientType), `courante` via le `sid` du JWT, `confiance`, `derniereUtilisation` |
+| `/sessions/{id}` | DELETE | ✅ | ✅ | ✅ | ✅ | 🔒 déconnexion à distance (révocation Keycloak, jeton hors ligne compris + suppression) ; 404 si pas à moi |
 | `/preferences` | GET / PUT | ✅ | ✅ | ✅ | ✅ | 🔒 préférences synchronisées (JSONB) : favoris (50 max), dernierMode, masquerMontant, dernierMoyenPaiement, `derniereTontineGeree` (null si l'utilisateur n'en est pas/plus gestionnaire, sans refus) |
 | `/gestion/demandes` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 demandes d'adhésion reçues sur mes tontines (`?statut=`, `?tontineId=`), avec téléphone |
 | `/demandes` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 mes demandes d'adhésion envoyées |
@@ -603,7 +603,10 @@ obligatoire** : sans Docker démarré, le build échoue (les `*IT` ne sont jamai
 
 | V044 | `create_retraits_epargne.sql` | B42 : table `retraits_epargne` ; `tontine_membres.solde_le` ; `distributions_evenementielles.montant_retire` (reprise 0) ; `tontines.regle_retrait` (reprise INTERDIT) |
 
-Prochaine version disponible : **V045**
+| V045 | `securite_pin_otp.sql` | SE07 : `users.pin_echecs_cumules`, `otp_verifications.tentatives`, `phone_change_requests.tentatives`, table `envois_otp` |
+| V046 | `sessions_appareil_confiance.sql` | B53 : `user_sessions.appareil_id` (unique par utilisateur), `confiance` |
+
+Prochaine version disponible : **V047**
 
 ---
 

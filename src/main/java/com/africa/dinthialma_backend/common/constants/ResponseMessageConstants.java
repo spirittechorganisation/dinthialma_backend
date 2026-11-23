@@ -13,6 +13,13 @@ public final class ResponseMessageConstants {
   public static final String AUTH_OTP_SENT = "OTP envoyé avec succès";
   public static final String AUTH_OTP_VERIFIED = "OTP vérifié avec succès";
   public static final String AUTH_OTP_INVALID = "OTP invalide ou expiré";
+  public static final String AUTH_OTP_RATE_LIMITED =
+      "Trop de codes demandés pour ce numéro. Réessayez plus tard.";
+  public static final String AUTH_OTP_TOO_MANY_ATTEMPTS =
+      "Trop d'essais incorrects : ce code n'est plus valable, demandez-en un nouveau.";
+  public static final String AUTH_PIN_DISABLED =
+      "Code PIN désactivé après trop d'erreurs. Connectez-vous avec votre mot de passe puis"
+          + " créez un nouveau code PIN.";
   public static final String AUTH_PASSWORD_RESET_SUCCESS = "Mot de passe réinitialisé avec succès";
   public static final String AUTH_PASSWORD_RESET_EMAIL_SENT = "Email de réinitialisation envoyé";
   public static final String AUTH_PROFILE_UPDATED = "Profil mis à jour avec succès";

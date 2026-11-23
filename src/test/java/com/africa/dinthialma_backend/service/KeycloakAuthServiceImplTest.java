@@ -152,6 +152,28 @@ class KeycloakAuthServiceImplTest {
     }
 
     @Test
+    @DisplayName("B53 : login hors ligne → scope offline_access ; login normal sans")
+    void loginHorsLigne() throws Exception {
+      service.login("221770000001", "Secret@2026", true);
+      service.login("221770000001", "Secret@2026");
+      assertThat(corpsRecus.get(0)).contains("offline_access");
+      assertThat(corpsRecus.get(1)).doesNotContain("offline_access");
+    }
+
+    @Test
+    @DisplayName("B53 : révocation d'un jeton (endpoint revoke) ; erreur Keycloak non bloquante")
+    void revocation() {
+      reponse = "";
+      statut = 200;
+      assertThatCode(() -> service.revoquerJeton("ref")).doesNotThrowAnyException();
+      assertThat(corpsRecus.getFirst())
+          .startsWith("/realms/dinthialma/protocol/openid-connect/revoke?")
+          .contains("token=ref", "token_type_hint=refresh_token");
+      statut = 500;
+      assertThatCode(() -> service.revoquerJeton("ref")).doesNotThrowAnyException();
+    }
+
+    @Test
     @DisplayName("logout : révocation envoyée ; erreur Keycloak non bloquante")
     void logout() {
       reponse = "";

@@ -17,6 +17,18 @@ public interface KeycloakAuthService {
   LoginResponse login(String username, String password) throws CustomException;
 
   /**
+   * Connexion par mot de passe ; avec {@code horsLigne}, scope {@code offline_access} : le refresh
+   * token renvoyé est un jeton hors ligne (B53), indépendant de SSO Session Idle.
+   */
+  LoginResponse login(String username, String password, boolean horsLigne) throws CustomException;
+
+  /**
+   * Révoque un refresh token chez Keycloak (endpoint de révocation, RFC 7009) : pour un jeton hors
+   * ligne, la session hors ligne est supprimée (B53). Non bloquant : un échec est journalisé.
+   */
+  void revoquerJeton(String refreshToken);
+
+  /**
    * Invalide la session Keycloak via le refresh token.
    *
    * @param refreshToken token de rafraîchissement
