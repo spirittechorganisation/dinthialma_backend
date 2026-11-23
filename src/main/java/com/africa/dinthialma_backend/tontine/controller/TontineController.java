@@ -10,6 +10,7 @@ import com.africa.dinthialma_backend.tontine.dto.ChangerOrdreBeneficiaireRequest
 import com.africa.dinthialma_backend.tontine.dto.ClotureEnSuspensResponse;
 import com.africa.dinthialma_backend.tontine.dto.CloturerTontineRequest;
 import com.africa.dinthialma_backend.tontine.dto.CreateTontineRequest;
+import com.africa.dinthialma_backend.tontine.dto.DistributionFinaleResponse;
 import com.africa.dinthialma_backend.tontine.dto.ModifierEcheanceRequest;
 import com.africa.dinthialma_backend.tontine.dto.ModifierReglagesRequest;
 import com.africa.dinthialma_backend.tontine.dto.SimulationCalendrierRequest;
@@ -18,6 +19,7 @@ import com.africa.dinthialma_backend.tontine.dto.TontineResponse;
 import com.africa.dinthialma_backend.tontine.dto.UpdateTontineRequest;
 import com.africa.dinthialma_backend.tontine.service.interfaces.CalendrierService;
 import com.africa.dinthialma_backend.tontine.service.interfaces.ClotureTontineService;
+import com.africa.dinthialma_backend.tontine.service.interfaces.DistributionService;
 import com.africa.dinthialma_backend.tontine.service.interfaces.EcheanceService;
 import com.africa.dinthialma_backend.tontine.service.interfaces.TontineService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -76,6 +78,7 @@ public class TontineController {
   private final CalendrierService calendrierService;
   private final EcheanceService echeanceService;
   private final ClotureTontineService clotureService;
+  private final DistributionService distributionService;
   private final RequestHeaderParser headerParser;
 
   // ─── Création ────────────────────────────────────────────────────────────
@@ -232,6 +235,46 @@ public class TontineController {
 
     return ResponseEntity.ok(
         new CustomResponse(SUCCESS, OK, ResponseMessageConstants.TONTINE_GET_SUCCESS, response));
+  }
+
+  @GetMapping("/{id}/distribution")
+  @Operation(
+      summary = "Relire la répartition finale (événementielle)",
+      description =
+          "🔒 Rôles : créateur de la tontine, SUPER_ADMIN (toutes les lignes) ; membre de la"
+              + " tontine (sa ligne seulement).\n\n"
+              + "Répartition enregistrée à la distribution finale (clôture du dernier sous-cycle,"
+              + " ou clôture forcée de la tontine) : par membre `montantCotise`,"
+              + " `montantCommission`, `montantNet` et statut actuel du membre ; totaux de toute"
+              + " la tontine et date de distribution, quel que soit l'appelant (B51).")
+  @ApiResponses({
+    @ApiResponse(
+        responseCode = "200",
+        description = "Répartition finale",
+        content = @Content(schema = @Schema(implementation = DistributionFinaleResponse.class))),
+    @ApiResponse(responseCode = "400", description = "Tontine non événementielle"),
+    @ApiResponse(responseCode = "401", description = "JWT manquant ou expiré"),
+    @ApiResponse(
+        responseCode = "403",
+        description = "Accès interdit – pas créateur ni membre ni SUPER_ADMIN"),
+    @ApiResponse(
+        responseCode = "404",
+        description =
+            "Tontine introuvable, ou `DISTRIBUTION_NON_FAITE` : distribution finale pas encore"
+                + " faite"),
+  })
+  public ResponseEntity<CustomResponse> getDistribution(
+      @Parameter(
+              description = "UUID de la tontine",
+              example = "550e8400-e29b-41d4-a716-446655440000")
+          @PathVariable
+          UUID id,
+      HttpServletRequest httpRequest)
+      throws CustomException {
+    String keycloakId = headerParser.extractKeycloakId(httpRequest);
+    DistributionFinaleResponse response = distributionService.lire(keycloakId, id);
+    return ResponseEntity.ok(
+        new CustomResponse(SUCCESS, OK, ResponseMessageConstants.DISTRIBUTION_SUCCESS, response));
   }
 
   // ─── Mise à jour ─────────────────────────────────────────────────────────

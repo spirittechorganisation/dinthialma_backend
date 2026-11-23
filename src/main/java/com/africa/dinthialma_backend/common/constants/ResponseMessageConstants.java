@@ -67,6 +67,9 @@ public final class ResponseMessageConstants {
   public static final String TONTINE_ACTIVATED = "Tontine activée avec succès";
   public static final String TONTINE_SUSPENDED = "Tontine suspendue avec succès";
   public static final String TONTINE_CLOTUREE = "Tontine clôturée avec succès";
+  public static final String DISTRIBUTION_SUCCESS = "Répartition finale récupérée avec succès";
+  public static final String DISTRIBUTION_NON_FAITE =
+      "La distribution finale de cette tontine n'est pas encore faite";
 
   // Cycle
   public static final String CYCLE_LIST_SUCCESS = "Liste des cycles récupérée avec succès";

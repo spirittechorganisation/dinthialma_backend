@@ -103,6 +103,9 @@ class PonctualiteTest {
 
     Cotisation sansDate = declaree(CotisationStatut.EN_ATTENTE, 20, 10, 0);
     sansDate.setCreatedAt(null);
+    // Sans date de saisie, l'heure actuelle sert de repère : échéance placée dans l'avenir pour que
+    // le test ne dépende pas du jour où il tourne (il échouait à partir du 23/11/2026)
+    cycle.setEcheanceAt(LocalDate.now().plusYears(1).atTime(23, 59));
     assertThat(Ponctualite.de(sansDate)).isEqualTo(Ponctualite.A_TEMPS);
     Cotisation sansTour = declaree(CotisationStatut.EN_ATTENTE, 20, 10, 0);
     sansTour.setCycle(null);

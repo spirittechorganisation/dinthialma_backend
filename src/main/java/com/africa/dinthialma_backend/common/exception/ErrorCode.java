@@ -195,7 +195,11 @@ public enum ErrorCode {
    * Date de début passée (B46) : à la création, à la modification, ou à l'activation qui génère les
    * tours. Choisir aujourd'hui ou une date future.
    */
-  DATE_DEBUT_PASSEE;
+  DATE_DEBUT_PASSEE,
+
+  // ─── Distribution finale et retraits (B51, B42) ───────────────────────
+  /** Distribution finale pas encore faite (B51) : rien à relire. */
+  DISTRIBUTION_NON_FAITE;
 
   /** Code générique correspondant à un statut HTTP (repli quand aucun code métier n'est fourni). */
   public static ErrorCode fromStatus(HttpStatusCode status) {

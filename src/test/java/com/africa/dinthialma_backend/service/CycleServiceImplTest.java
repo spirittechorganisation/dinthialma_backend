@@ -1693,4 +1693,110 @@ class CycleServiceImplTest {
       assertThat(dernier.getStatut()).isEqualTo(CycleStatut.TERMINE);
     }
   }
+
+  @Nested
+  @DisplayName("B51 : répartition finale relisible")
+  class RepartitionRelisible {
+
+    private User awa;
+    private TontineMembre membreAwa;
+    private TontineMembre membreBinta;
+    private CycleTontine dernier;
+
+    @BeforeEach
+    void distribuee() {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      awa = Fixtures.user("Awa");
+      membreAwa = Fixtures.membre(tontine, awa, 1);
+      membreBinta = Fixtures.membre(tontine, Fixtures.user("Binta"), 2);
+      dernier = cycleConnu(3, CycleStatut.TERMINE);
+      lenient()
+          .when(userRepository.findByKeycloakId(awa.getKeycloakId()))
+          .thenReturn(Optional.of(awa));
+      lenient()
+          .when(
+              membreRepository.existsByTontine_IdAndUser_IdAndDeletedAtIsNull(
+                  tontine.getId(), awa.getId()))
+          .thenReturn(true);
+      lenient()
+          .when(distributionRepository.findByCycleAvecMembres(dernier.getId()))
+          .thenReturn(List.of(part(membreAwa, "46000"), part(membreBinta, "42000")));
+    }
+
+    private DistributionEvenementielle part(TontineMembre membre, String montant) {
+      return DistributionEvenementielle.builder()
+          .id(UUID.randomUUID())
+          .tontine(tontine)
+          .cycle(dernier)
+          .membre(membre)
+          .montantCotise(new BigDecimal(montant))
+          .montantCommission(BigDecimal.ZERO)
+          .montantNet(new BigDecimal(montant))
+          .build();
+    }
+
+    @Test
+    @DisplayName("GET du dernier sous-cycle : toutes les parts pour le gestionnaire")
+    void gestionnaire() throws Exception {
+      CycleResponse r = service.getCycle(kc, tontine.getId(), dernier.getId());
+
+      assertThat(r.getDistributionParMembre())
+          .extracting(CycleResponse.MembreDistributionInfo::getMembreId)
+          .containsExactly(membreAwa.getId(), membreBinta.getId());
+      assertThat(r.getDistributionParMembre().get(0).getFirstName()).isEqualTo("Awa");
+      assertThat(r.getDistributionParMembre().get(0).getMontantNet()).isEqualByComparingTo("46000");
+    }
+
+    @Test
+    @DisplayName("GET du dernier sous-cycle par un membre : sa part seulement")
+    void membre() throws Exception {
+      CycleResponse r = service.getCycle(awa.getKeycloakId(), tontine.getId(), dernier.getId());
+
+      assertThat(r.getDistributionParMembre())
+          .extracting(CycleResponse.MembreDistributionInfo::getMembreId)
+          .containsExactly(membreAwa.getId());
+    }
+
+    @Test
+    @DisplayName("sous-cycle intermédiaire ou tour rotatif : pas de distribution (null)")
+    void sansDistribution() throws Exception {
+      CycleTontine intermediaire = cycleConnu(1, CycleStatut.TERMINE);
+      assertThat(
+              service
+                  .getCycle(kc, tontine.getId(), intermediaire.getId())
+                  .getDistributionParMembre())
+          .isNull();
+
+      tontine.setTontineType(TontineType.ROTATIVE);
+      assertThat(service.getCycle(kc, tontine.getId(), dernier.getId()).getDistributionParMembre())
+          .isNull();
+      verify(distributionRepository, never()).findByCycleAvecMembres(dernier.getId());
+    }
+
+    @Test
+    @DisplayName("clôture anticipée : distribuerMaintenant renvoie la répartition calculée")
+    void distribuerMaintenantRenvoieLaRepartition() {
+      CycleTontine enCours = Fixtures.cycle(tontine, 1, CycleStatut.EN_COURS);
+      when(cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId()))
+          .thenReturn(List.of(enCours), List.of(enCours));
+      when(cotisationRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+              tontine.getId(), CotisationStatut.VALIDE))
+          .thenReturn(List.of(cotisation(membreAwa, enCours, CotisationStatut.VALIDE, "2000")));
+
+      assertThat(service.distribuerMaintenant(gestionnaire, tontine))
+          .extracting(CycleResponse.MembreDistributionInfo::getMontantNet)
+          .containsExactly(new BigDecimal("2000"));
+    }
+
+    @Test
+    @DisplayName("distribuerMaintenant : rotative ou aucun sous-cycle en cours → liste vide")
+    void distribuerMaintenantSansRien() {
+      when(cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId()))
+          .thenReturn(List.of());
+      assertThat(service.distribuerMaintenant(gestionnaire, tontine)).isEmpty();
+
+      tontine.setTontineType(TontineType.ROTATIVE);
+      assertThat(service.distribuerMaintenant(gestionnaire, tontine)).isEmpty();
+    }
+  }
 }

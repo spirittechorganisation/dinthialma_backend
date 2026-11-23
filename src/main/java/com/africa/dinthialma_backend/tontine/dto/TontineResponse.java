@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.Getter;
@@ -135,6 +136,14 @@ public class TontineResponse {
       allowableValues = {"ACTIF", "SUSPENDU", "SORTI"},
       nullable = true)
   private MembreStatut monStatutMembre;
+
+  @Schema(
+      description =
+          "Répartition finale par membre (B51), présente seulement dans la réponse de PUT"
+              + " /cloturer quand la clôture d'une événementielle a fait la distribution ; absente"
+              + " sinon. Elle se relit ensuite avec GET /v1/tontines/{id}/distribution.",
+      nullable = true)
+  private List<CycleResponse.MembreDistributionInfo> distributionParMembre;
 
   @Schema(description = "Date de création de la tontine")
   private LocalDateTime createdAt;

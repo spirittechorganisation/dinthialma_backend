@@ -141,7 +141,33 @@ public class CycleServiceImpl implements CycleService {
     assertCanAccess(caller, tontine);
 
     CycleTontine cycle = findCycleById(tontineId, cycleId);
-    return reponse(cycle);
+    return reponse(cycle).toBuilder()
+        .distributionParMembre(distributionRelue(caller, tontine, cycle))
+        .build();
+  }
+
+  /**
+   * Répartition enregistrée à la clôture de ce sous-cycle (B51), relue : toutes les parts pour le
+   * gestionnaire et le SUPER_ADMIN, sa seule part pour un membre. Null pour un tour rotatif ou un
+   * sous-cycle qui n'a pas fait la distribution finale.
+   */
+  private List<MembreDistributionInfo> distributionRelue(
+      User caller, Tontine tontine, CycleTontine cycle) {
+    if (tontine.getTontineType() != TontineType.EVENEMENTIELLE
+        || cycle.getStatut() != CycleStatut.TERMINE) {
+      return null;
+    }
+    List<DistributionEvenementielle> parts =
+        distributionRepository.findByCycleAvecMembres(cycle.getId());
+    if (parts.isEmpty()) {
+      return null;
+    }
+    boolean gestionnaire =
+        isSuperAdmin(caller) || tontine.getCreePar().getId().equals(caller.getId());
+    return parts.stream()
+        .filter(d -> gestionnaire || d.getMembre().getUser().getId().equals(caller.getId()))
+        .map(cycleMapper::toDistributionInfo)
+        .toList();
   }
 
   // ─── Ouverture manuelle ──────────────────────────────────────────────────
@@ -335,9 +361,9 @@ public class CycleServiceImpl implements CycleService {
   // ─── Clôture de la tontine (B33) ─────────────────────────────────────────
 
   @Override
-  public void distribuerMaintenant(User caller, Tontine tontine) {
+  public List<MembreDistributionInfo> distribuerMaintenant(User caller, Tontine tontine) {
     if (tontine.getTontineType() != TontineType.EVENEMENTIELLE) {
-      return;
+      return List.of();
     }
     UUID tontineId = tontine.getId();
     List<CycleTontine> tours =
@@ -352,10 +378,12 @@ public class CycleServiceImpl implements CycleService {
               cycleRepository.save(tour);
             });
     // Plus aucun sous-cycle à venir : la clôture du sous-cycle en cours fait la distribution finale
-    tours.stream()
+    return tours.stream()
         .filter(tour -> tour.getStatut() == CycleStatut.EN_COURS)
         .findFirst()
-        .ifPresent(enCours -> closeCycleEvenementielle(caller, tontine, tontineId, enCours));
+        .map(enCours -> closeCycleEvenementielle(caller, tontine, tontineId, enCours))
+        .map(CycleResponse::getDistributionParMembre)
+        .orElse(List.of());
   }
 
   /**

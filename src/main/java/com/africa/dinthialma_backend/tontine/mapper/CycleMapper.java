@@ -8,6 +8,7 @@ import com.africa.dinthialma_backend.tontine.dto.CycleResponse.MembreDistributio
 import com.africa.dinthialma_backend.tontine.dto.EcheanceResponse;
 import com.africa.dinthialma_backend.tontine.entity.CycleGagnant;
 import com.africa.dinthialma_backend.tontine.entity.CycleTontine;
+import com.africa.dinthialma_backend.tontine.entity.DistributionEvenementielle;
 import com.africa.dinthialma_backend.tontine.entity.EcheanceCycle;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -94,6 +95,14 @@ public interface CycleMapper {
   @Mapping(target = "ordreJackpot", source = "membre.ordreJackpot")
   @Mapping(target = "dateJackpot", source = "membre.dateJackpot")
   CycleResponse.GagnantInfo toGagnantInfo(CycleGagnant gagnant);
+
+  /** Part enregistrée à la distribution finale (B51), relue avec le sous-cycle. */
+  @Mapping(target = "membreId", source = "membre.id")
+  @Mapping(target = "userId", source = "membre.user.id")
+  @Mapping(target = "firstName", source = "membre.user.firstName")
+  @Mapping(target = "lastName", source = "membre.user.lastName")
+  @Mapping(target = "phone", source = "membre.user.phone")
+  MembreDistributionInfo toDistributionInfo(DistributionEvenementielle distribution);
 
   /** Gagnants non supprimés. */
   @Named("gagnantsActifs")
