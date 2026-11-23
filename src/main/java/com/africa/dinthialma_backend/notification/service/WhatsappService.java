@@ -283,4 +283,22 @@ public class WhatsappService {
             + appUrl;
     send(CategorieWhatsapp.JACKPOT, phone, message);
   }
+
+  /**
+   * Retrait anticipé d'épargne remis au membre (B42) : famille {@code JACKPOT} (argent remis, déjà
+   * active par défaut).
+   */
+  public void sendRetraitRemis(
+      String phone, String tontineName, String montant, String soldeRestant) {
+    String message =
+        "💵 *Dinthialma* – Retrait de *"
+            + montant
+            + " FCFA* remis sur votre épargne *"
+            + tontineName
+            + "*.\nSolde restant : "
+            + soldeRestant
+            + " FCFA.\n👉 Détails : "
+            + appUrl;
+    send(CategorieWhatsapp.JACKPOT, phone, message);
+  }
 }

@@ -36,6 +36,7 @@ import com.africa.dinthialma_backend.tontine.repository.CycleGagnantRepository;
 import com.africa.dinthialma_backend.tontine.repository.CycleTontineRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -179,6 +180,28 @@ class SchedulerServiceTest {
               eq(aJour.getUser().getPhone()), any(), any(), anyLong(), any());
       verify(whatsappService, never())
           .sendEvenementielleUrgent(any(), any(), any(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("B42 EVENEMENTIELLE : membre soldé, ni rappel de période ni rappel de jour clé")
+    void membreSolde() {
+      CycleTontine cycle = evenementielle(10L);
+      TontineMembre solde = Fixtures.membre(tontine, Fixtures.user("Soldee"), 1);
+      solde.setSoldeLe(LocalDateTime.now().minusDays(1));
+      when(membreRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+              tontine.getId(), MembreStatut.ACTIF))
+          .thenReturn(List.of(solde));
+
+      scheduler.rappelCotisationsEnAttente();
+      evenementielle(7L);
+      scheduler.rappelCotisationsEnAttente();
+
+      verify(whatsappService, never())
+          .sendEvenementielleRappelPeriode(any(), any(), any(), anyLong(), any());
+      verify(whatsappService, never())
+          .sendEvenementielleUrgent(any(), any(), any(), anyLong(), any());
+      verify(cotisationRepository, never())
+          .existsActiveByCycleAndMembre(cycle.getId(), solde.getId());
     }
 
     @Test

@@ -506,11 +506,15 @@ public class TontineController {
 
   @PatchMapping("/{id}/reglages")
   @Operation(
-      summary = "Modifier les réglages de remise (y compris en cours)",
+      summary = "Modifier les réglages (y compris en cours)",
       description =
-          "🔒 Rôles : créateur de la tontine, SUPER_ADMIN. Tontine rotative non terminée. Champ"
-              + " absent = inchangé. `modeRemise` : option de remise du jackpot par défaut (B33),"
-              + " effective aux prochaines remises ; `CAISSE` → 400 `MODE_REMISE_INDISPONIBLE`.")
+          "🔒 Rôles : créateur de la tontine, SUPER_ADMIN. Tontine non terminée. Champ absent ="
+              + " inchangé ; chaque changement est audité.\n\n"
+              + "`modeRemise` (rotative uniquement, sinon 400) : option de remise du jackpot par"
+              + " défaut (B33), effective aux prochaines remises ; `CAISSE` → 400"
+              + " `MODE_REMISE_INDISPONIBLE`.\n\n"
+              + "`regleRetrait` (événementielle uniquement, sinon 400 `RETRAIT_NON_DISPONIBLE`) :"
+              + " `INTERDIT` ou `LIBRE`, autorise les retraits anticipés (B42).")
   public ResponseEntity<CustomResponse> modifierReglages(
       @PathVariable UUID id,
       @RequestBody @Valid ModifierReglagesRequest request,

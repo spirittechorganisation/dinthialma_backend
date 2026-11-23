@@ -5,6 +5,7 @@ import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
 import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.MonRoleTontine;
+import com.africa.dinthialma_backend.tontine.codeList.RegleRetrait;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import com.africa.dinthialma_backend.tontine.codeList.UniteRythme;
@@ -70,6 +71,13 @@ public class TontineResponse {
 
   @Schema(description = "Option de remise du jackpot par défaut (B33)", example = "DISPONIBLE")
   private ModeRemise modeRemise;
+
+  @Schema(
+      description =
+          "Règle de retrait anticipé (B42) : LIBRE (nouvelle événementielle) ou INTERDIT"
+              + " (rotative, tontines antérieures)",
+      example = "LIBRE")
+  private RegleRetrait regleRetrait;
 
   @Schema(description = "Code de l'ordre des bénéficiaires (ROTATIVE uniquement)", example = "FIXE")
   private String ordreBeneficiaire;

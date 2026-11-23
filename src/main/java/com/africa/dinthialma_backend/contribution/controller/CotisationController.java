@@ -200,7 +200,8 @@ public class CotisationController {
             "Données invalides, tour pas ouvert, ou membre SORTI / SUSPENDU (`MEMBRE_INACTIF`,"
                 + " B44 : le réactiver d'abord), ou sous-cycle événementiel pas encore commencé"
                 + " (`ECHEANCE_NON_OUVERTE`, B47 : pas de paiement d'avance ; rotatives non"
-                + " concernées)"),
+                + " concernées), ou membre soldé après un retrait total (`MEMBRE_SOLDE`, B42 :"
+                + " annuler le retrait total d'abord)"),
     @ApiResponse(responseCode = "401", description = "JWT manquant ou expiré"),
     @ApiResponse(responseCode = "403", description = "Accès interdit (pas cotisant de la tontine)"),
     @ApiResponse(responseCode = "404", description = "Tontine ou cycle introuvable"),
@@ -251,7 +252,8 @@ public class CotisationController {
             "Données invalides, tour pas ouvert, ou membre SORTI / SUSPENDU (`MEMBRE_INACTIF`,"
                 + " B44 : le réactiver d'abord), ou sous-cycle événementiel pas encore commencé"
                 + " (`ECHEANCE_NON_OUVERTE`, B47 : pas de paiement d'avance ; rotatives non"
-                + " concernées)"),
+                + " concernées), ou membre soldé après un retrait total (`MEMBRE_SOLDE`, B42 :"
+                + " annuler le retrait total d'abord)"),
     @ApiResponse(responseCode = "401", description = "JWT manquant ou expiré"),
     @ApiResponse(
         responseCode = "403",
@@ -546,7 +548,10 @@ public class CotisationController {
               + " retirés restent exclus. Tri par `ordreJackpot` croissant puis par date"
               + " d'adhésion.\n\n"
               + "Pagination : `?page=0&size=20` (tri par défaut `ordreJackpot,asc` puis"
-              + " `createdAt,asc`).")
+              + " `createdAt,asc`).\n\n"
+              + "**Épargne événementielle (B42)** : `totalRetire` (retraits remis) et `solde`"
+              + " (`totalCotise` − `totalRetire`) par membre, `soldeLe` si le membre a tout retiré ;"
+              + " absents en rotative.")
   @ApiResponses({
     @ApiResponse(
         responseCode = "200",

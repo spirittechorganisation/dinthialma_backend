@@ -362,4 +362,26 @@ class RappelsEcheanceServiceTest {
             eq(tontine.getId()),
             any());
   }
+
+  @Test
+  @DisplayName(
+      "B42 : membre soldé (retrait total) ni rappelé ni signalé dans COTISATIONS_MANQUANTES")
+  void membreSolde() {
+    absent.setSoldeLe(ECHEANCE.minusDays(3));
+
+    service.traiter(ECHEANCE.minusDays(1).withHour(18));
+    verifierRappels(1, "attendue demain");
+    verify(notificationService, never())
+        .notify(eq(absent.getUser().getId()), any(), any(), any(), any(), any());
+
+    service.traiter(ECHEANCE.plusMinutes(5));
+    verify(notificationService)
+        .notify(
+            eq(gestionnaire.getId()),
+            eq(NotificationType.COTISATIONS_MANQUANTES),
+            anyString(),
+            argThat(m -> m.contains("1 membre n'a") && !m.contains("Moussa")),
+            eq(tontine.getId()),
+            any());
+  }
 }

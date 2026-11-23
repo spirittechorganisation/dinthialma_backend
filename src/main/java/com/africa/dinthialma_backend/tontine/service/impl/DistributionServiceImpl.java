@@ -84,6 +84,7 @@ public class DistributionServiceImpl implements DistributionService {
         .nombreMembres(parts.size())
         .totalCotise(somme(parts, DistributionEvenementielle::getMontantCotise))
         .totalCommission(somme(parts, DistributionEvenementielle::getMontantCommission))
+        .totalRetire(somme(parts, DistributionEvenementielle::getMontantRetire))
         .totalNet(somme(parts, DistributionEvenementielle::getMontantNet))
         .lignes(visibles.stream().map(distributionMapper::toLigne).toList())
         .build();

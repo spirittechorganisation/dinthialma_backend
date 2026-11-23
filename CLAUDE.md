@@ -85,7 +85,8 @@
 | `/{id}/suspendre` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 ACTIVE → SUSPENDUE |
 | `/{id}/cloturer` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 ACTIVE/SUSPENDUE → TERMINEE (B33), irréversible ; points en suspens (tours non remis, gagnants à désigner, retards, compléments, paiements à valider) → 409 `TONTINE_CLOTURE_A_CONFIRMER` avec le détail dans `data`, puis corps `forcer: true` ; BROUILLON ou déjà TERMINEE → 400 `TONTINE_NON_CLOTURABLE` ; membres actifs notifiés (`TONTINE_CLOTUREE`) |
 | `/{id}/ordre-beneficiaire` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 ROTATIVE BROUILLON/ACTIVE/SUSPENDUE ; effet à la prochaine clôture ; vers ROTATION/ALEATOIRE refusé si un tour attend ses gagnants (409 `DESIGNATION_EN_ATTENTE`) ; membres actifs notifiés (`ORDRE_BENEFICIAIRE_MODIFIE`) |
-| `/{id}/reglages` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 réglages modifiables à tout moment (B33), tontine ROTATIVE non TERMINEE : `modeRemise` (option de remise par défaut, effet aux prochaines remises ; `CAISSE` → 400 `MODE_REMISE_INDISPONIBLE`) ; audité |
+| `/{id}/reglages` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 réglages modifiables à tout moment, tontine non TERMINEE : `regleRetrait` (B42, événementielle seulement, sinon `RETRAIT_NON_DISPONIBLE`) ; `modeRemise` (rotative seulement) (option de remise par défaut, effet aux prochaines remises ; `CAISSE` → 400 `MODE_REMISE_INDISPONIBLE`) ; audité |
+| `/{id}/distribution` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 répartition finale ÉVÉNEMENTIELLE relue (B51) : lignes (`montantCotise`, `montantCommission`, `montantRetire`, `montantNet`, `statutMembre`) + totaux + `dateDistribution` ; ¹membre : sa ligne seulement ; rotative → 400 ; pas encore distribuée → 404 `DISTRIBUTION_NON_FAITE` |
 | `/{id}/echeance` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 jour / heure d'échéance et rappels (B26), tontine non TERMINEE ; tours pas encore commencés replanifiés, tour en cours inchangé ; membres actifs notifiés (`REGLES_MODIFIEES`) |
 
 ### 👥 Membres (`/v1/tontines/{tontineId}/membres`)
@@ -123,6 +124,16 @@
 | `/{cycleId}/remise/apercu` | GET | ❌ | ❌ | ✅² | ✅ | 🔒 aperçu avant remise (B33), tour EN_COURS d'une ROTATIVE, sans effet en base : `jackpotPrevu`, `collecte`, `manquant`, `retardataires[]`, `options[]` (une par `modeRemise` : `possible`, `montantNet`, `montantBeneficiaire`, `commission`, `avanceGestionnaire`, `resteARecevoir`, `montantARecuperer`) |
 | `/{cycleId}/cloturer` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 EN_COURS → TERMINE, calcul jackpot + commissions ; B33 : corps facultatif `modeRemise` (défaut = réglage de la tontine) ; `ATTENDRE` avec un manque → 409 `REMISE_JACKPOT_INCOMPLETE` ; `CAISSE`, ou `AVANCE_COMMISSION` que la commission ne couvre pas → 400 `MODE_REMISE_INDISPONIBLE` |
 | `/{cycleId}/beneficiaire` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 ordreBeneficiaire MANUEL ou HYBRIDE + cycle TERMINE sans gagnant ; `membreIds` vide = tirage aléatoire de `nombreGagnants` (priorités accordées servies d'abord) ; refuse doublons, membres non ACTIF et membres `aRecuJackpot` |
+
+### 💵 Retraits d'épargne (`/v1/tontines/{tontineId}`, B42 lot 1)
+
+| Endpoint | Méthode | USER | MEMBER | ADMIN | SUPER_ADMIN | Notes |
+|----------|---------|------|--------|-------|-------------|-------|
+| `/retraits/admin` | POST | ❌ | ❌ | ✅² | ✅ | 🔒 retrait déjà remis → `REMIS` ; événementielle ACTIVE/SUSPENDUE non distribuée (`RETRAIT_NON_DISPONIBLE`), règle `LIBRE` (`RETRAIT_INTERDIT`) ; `PARTIEL` ≤ solde (`RETRAIT_SOLDE_INSUFFISANT`, `data.solde`) ; `TOTAL` = tout le solde → membre soldé (`soldeLe`, `MEMBRE_SOLDE` ensuite) ; `dateRemise` passée permise (≥ début de la tontine) ; `RETRAIT_REMIS` sauf report de plus de 24 h |
+| `/retraits` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 `?membreId=&statut=` (multi) ; ¹les siens seulement ; tri `dateRemise` DESC |
+| `/retraits/export` | GET | ❌ | ❌ | ✅² | ✅ | 🔒 CSV de tous les retraits |
+| `/retraits/{retraitId}` | DELETE | ❌ | ❌ | ✅² | ✅ | 🔒 corps `{motif}` obligatoire → `ANNULE` ; total annulé = membre plus soldé ; `RETRAIT_NON_ANNULABLE` (déjà annulé, distribution faite, partiel d'un membre soldé) |
+| `/membres/{membreId}/solde` | GET | ❌ | ✅¹ (le sien) | ✅² | ✅ | 🔒 `totalCotiseValide`, `totalRetire`, `solde`, `soldeLe` |
 
 ### 🙏 Priorités de jackpot (`/v1/tontines/{tontineId}/priorites`)
 
@@ -281,7 +292,7 @@ src/main/java/com/africa/dinthialma_backend/
 │       ├── interfaces/ CotisationService, SuiviTourService
 │       └── impl/       CotisationServiceImpl, SuiviTourServiceImpl
 ├── notification/   ✅ SMS (LAfricaMobile) + notifications in-app
-│   ├── codeList/       NotificationType (26 valeurs)
+│   ├── codeList/       NotificationType (27 valeurs)
 │   ├── controller/     NotificationController
 │   ├── dto/            NotificationResponse
 │   ├── entity/         UserNotification
@@ -297,6 +308,15 @@ src/main/java/com/africa/dinthialma_backend/
 │   │                   ValidationGroupeeRequest/Response, MonQrResponse, QrResolutionResponse
 │   ├── repository/     ActiviteRepository (requête native UNION)
 │   └── service/        MeService(+Impl), QrService(+Impl)
+├── epargne/        ✅ Retraits anticipés d'épargne événementielle (B42 lot 1)
+│   ├── calcul/         SoldeEpargne (solde, parts finales avec retraits)
+│   ├── codeList/       NatureRetrait, StatutRetrait, OrigineRetrait
+│   ├── controller/     RetraitEpargneController
+│   ├── dto/            RetraitRequests, RetraitEpargneResponse, SoldeEpargneResponse
+│   ├── entity/         RetraitEpargne
+│   ├── mapper/         RetraitEpargneMapper
+│   ├── repository/     RetraitEpargneRepository, RetraitEpargneSpecifications
+│   └── service/        RetraitEpargneService(+Impl)
 ├── adhesion/       ✅ Invitations par code + demandes d'adhésion (B16/B17)
 │   ├── codeList/       StatutDemande
 │   ├── controller/     AdhesionController
@@ -581,7 +601,9 @@ obligatoire** : sans Docker démarré, le build échoue (les `*IT` ne sont jamai
 
 | V043 | `add_mode_remise.sql` | B33 : `tontines.mode_remise` (reprise DISPONIBLE) ; `cycles_tontine.mode_remise`, `montant_prevu`, `montant_net_prevu`, `montant_avance` (vides sur les tours remis avant V043) |
 
-Prochaine version disponible : **V044**
+| V044 | `create_retraits_epargne.sql` | B42 : table `retraits_epargne` ; `tontine_membres.solde_le` ; `distributions_evenementielles.montant_retire` (reprise 0) ; `tontines.regle_retrait` (reprise INTERDIT) |
+
+Prochaine version disponible : **V045**
 
 ---
 
@@ -731,7 +753,7 @@ Prochaine version disponible : **V044**
 | Marquer tout lu (bulk `@Modifying`) | ✅ | 🔒 tout auth |
 | `notify()` non-bloquant (try/catch interne, jamais de rollback) | ✅ | INFRA |
 
-#### Mapping événements → `NotificationType` (26 valeurs)
+#### Mapping événements → `NotificationType` (27 valeurs)
 
 | Événement | Type | Destinataire |
 |-----------|------|--------------|
@@ -762,6 +784,7 @@ Prochaine version disponible : **V044**
 | Retard régularisé sur un tour remis, complément dû aux bénéficiaires (B33) | `COMPLEMENT_A_REMETTRE` | Gestionnaire (bénéficiaires : `JACKPOT_DISTRIBUE`) |
 | Dernier tour remis, ou distribution finale faite : la tontine peut être clôturée (B33) | `TONTINE_PRETE_A_CLOTURER` | Gestionnaire |
 | Tontine clôturée par son gestionnaire (B33) | `TONTINE_CLOTUREE` | Membres actifs (sauf celui qui clôture) |
+| Retrait d'épargne remis (B42), sauf report de plus de 24 h | `RETRAIT_REMIS` | Membre concerné (in-app + WhatsApp `JACKPOT`) |
 
 ---
 
@@ -972,6 +995,12 @@ WhatsApp passe par une méthode de `WhatsappService` rattachée à une famille (
       lot 2 : options de remise (modeRemise V043, aperçu, compléments, PATCH /reglages)    ✅
       lot 4 : clôture de la tontine (PUT /cloturer, TONTINE_PRETE_A_CLOTURER)              ✅
       lot 3 : tours ouverts à leur date (ouvertureTours), remise automatique à l'échéance  🔲
+
+✦ Correctifs et épargne déjà commencée (2026-11-21 → 23)
+  B43–B48 correctifs (distribution de tous les membres, dates, récaps avec SORTI)          ✅
+  B51 répartition finale relisible (GET /distribution, cycle, clôture forcée)              ✅
+  B42 lot 1 retraits saisis par le gestionnaire, solde, membre soldé, distribution (V044)  ✅
+  B42 lots 2–3 (demande du membre, règles délai/frais), B41 reprise                        🔲
 ```
 
 ---
@@ -1168,7 +1197,10 @@ Calcul `computeFinalDistribution()` :
 2. Commission `POURCENTAGE_JACKPOT` : prélevée proportionnellement à la mise de chaque membre
 3. Commission `FRAIS_FIXES_PAR_CYCLE` : répartie proportionnellement au montant cotisé
 4. Commission `FRAIS_ADHESION` : ignorée (ne touche pas le jackpot)
-5. `montantNet` du dernier cycle = cagnotte totale - commission totale (mise à jour)
+5. `montantNet` du dernier cycle = ce qui est remis à la distribution = cagnotte − commission − retraits (B42)
+   - **Retraits anticipés (B42)** : `net` par membre = cotisé − commission − retiré ; la commission (pourcentage
+     et frais fixes) porte sur le **distribuable** (cotisé − retiré), au prorata (`epargne/calcul/SoldeEpargne`) ;
+     membre soldé : ligne à 0 conservée, sans notification
 6. Part de chaque membre **enregistrée** dans `distributions_evenementielles` (V034, une seule fois par
    tontine) : reprise dans `/v1/me/summary`, `/v1/me/jackpots` (`DISTRIBUTION_FINALE`) et `/v1/me/activite`
    (`DISTRIBUTION_RECUE`). Les tontines clôturées avant V034 n'ont pas d'historique enregistré.

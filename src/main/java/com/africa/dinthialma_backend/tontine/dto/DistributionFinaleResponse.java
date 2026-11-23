@@ -36,7 +36,14 @@ public class DistributionFinaleResponse {
   @Schema(description = "Total des commissions prélevées", example = "0")
   private BigDecimal totalCommission;
 
-  @Schema(description = "Total remis aux membres à la distribution", example = "92000")
+  @Schema(description = "Total des retraits anticipés remis avant la distribution", example = "0")
+  private BigDecimal totalRetire;
+
+  @Schema(
+      description =
+          "Total remis aux membres à la distribution (totalNet + totalRetire + totalCommission ="
+              + " totalCotise)",
+      example = "92000")
   private BigDecimal totalNet;
 
   @Schema(description = "Lignes visibles par l'appelant (toutes, ou la sienne pour un membre)")
@@ -74,7 +81,12 @@ public class DistributionFinaleResponse {
     @Schema(description = "Part de commission prélevée", example = "0")
     private BigDecimal montantCommission;
 
-    @Schema(description = "Montant remis au membre à la distribution", example = "46000")
+    @Schema(description = "Retraits anticipés remis avant la distribution (B42)", example = "0")
+    private BigDecimal montantRetire;
+
+    @Schema(
+        description = "Montant remis à la distribution = cotisé − commission − retiré",
+        example = "46000")
     private BigDecimal montantNet;
   }
 }

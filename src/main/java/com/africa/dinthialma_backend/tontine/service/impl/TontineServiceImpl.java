@@ -27,6 +27,7 @@ import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
 import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.OrdreBeneficiaire;
+import com.africa.dinthialma_backend.tontine.codeList.RegleRetrait;
 import com.africa.dinthialma_backend.tontine.codeList.RoleFiltreTontine;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
@@ -137,6 +138,9 @@ public class TontineServiceImpl implements TontineService {
             .cotisationsParTour(cotisationsParTour)
             .declenchementJackpot(declenchement(type, request.getDeclenchementJackpot()))
             .modeRemise(modeRemise(request.getModeRemise()))
+            // B42 : retraits anticipés permis par défaut sur une nouvelle épargne événementielle
+            .regleRetrait(
+                type == TontineType.EVENEMENTIELLE ? RegleRetrait.LIBRE : RegleRetrait.INTERDIT)
             .ordreBeneficiaire(
                 type == TontineType.EVENEMENTIELLE ? null : request.getOrdreBeneficiaire())
             .modeCycle(
@@ -475,11 +479,25 @@ public class TontineServiceImpl implements TontineService {
     User caller = findUserByKeycloakId(keycloakId);
     Tontine tontine = findTontineById(id);
     assertIsCreatorOrSuperAdmin(caller, tontine);
-    if (tontine.getTontineType() != TontineType.ROTATIVE
-        || tontine.getStatut() == TontineStatut.TERMINEE) {
+    boolean rotative = tontine.getTontineType() == TontineType.ROTATIVE;
+    if (tontine.getStatut() == TontineStatut.TERMINEE
+        || (!rotative && request.getModeRemise() != null)) {
       throw new BadRequestException(
           "Les réglages de remise concernent une tontine rotative non terminée");
     }
+    if (request.getRegleRetrait() != null && rotative) {
+      throw new BadRequestException(
+          "Les retraits anticipés concernent les tontines événementielles",
+          ErrorCode.RETRAIT_NON_DISPONIBLE);
+    }
+    modifier(
+        caller,
+        tontine,
+        "regleRetrait",
+        tontine.getRegleRetraitEffectif(),
+        request.getRegleRetrait(),
+        RegleRetrait::name,
+        tontine::setRegleRetrait);
     if (request.getModeRemise() != null) {
       modifier(
           caller,

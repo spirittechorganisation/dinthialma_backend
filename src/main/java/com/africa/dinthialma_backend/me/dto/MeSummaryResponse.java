@@ -11,6 +11,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -124,6 +125,26 @@ public class MeSummaryResponse {
 
     @Schema(description = "Mes cotisations EN_ATTENTE dans cette tontine, en FCFA")
     private BigDecimal totalEnAttente;
+
+    @Schema(
+        description = "Mes retraits anticipés remis (B42, événementielle) ; absent en rotative",
+        example = "10000",
+        nullable = true)
+    private BigDecimal totalRetire;
+
+    @Schema(
+        description =
+            "Mon solde d'épargne = totalCotiseValide − totalRetire (B42, événementielle) ; absent"
+                + " en rotative",
+        example = "36000",
+        nullable = true)
+    private BigDecimal solde;
+
+    @Schema(
+        description =
+            "Date de mon retrait total (B42) : je ne cotise plus dans cette tontine ; null sinon",
+        nullable = true)
+    private LocalDateTime soldeLe;
 
     @Schema(
         description =

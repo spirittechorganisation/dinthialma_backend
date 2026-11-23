@@ -4,6 +4,7 @@ import com.africa.dinthialma_backend.auth.codeList.AccountStatus;
 import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.Getter;
@@ -16,7 +17,7 @@ import lombok.Getter;
     description =
         "Total cotisé par membre (tous cycles confondus, cotisations VALIDÉES uniquement)")
 @Getter
-@Builder
+@Builder(toBuilder = true)
 public class MembreTotalCotisationResponse {
 
   @Schema(description = "UUID du membership (tontine_membres.id)")
@@ -48,4 +49,23 @@ public class MembreTotalCotisationResponse {
 
   @Schema(description = "Nombre de cotisations validées prises en compte dans le total")
   private long nombreCotisationsValidees;
+
+  @Schema(
+      description =
+          "Retraits anticipés remis, frais compris (B42, événementielle) ; absent en rotative",
+      example = "10000",
+      nullable = true)
+  private BigDecimal totalRetire;
+
+  @Schema(
+      description =
+          "Solde d'épargne = totalCotise − totalRetire (B42, événementielle) ; absent en rotative",
+      example = "36000",
+      nullable = true)
+  private BigDecimal solde;
+
+  @Schema(
+      description = "Date du retrait total : membre soldé (badge), null sinon (B42)",
+      nullable = true)
+  private LocalDateTime soldeLe;
 }

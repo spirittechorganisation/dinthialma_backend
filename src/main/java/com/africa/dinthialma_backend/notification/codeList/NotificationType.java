@@ -101,5 +101,11 @@ public enum NotificationType {
   TONTINE_PRETE_A_CLOTURER,
 
   /** La tontine a été clôturée par son gestionnaire (B33) (destinataires : membres actifs). */
-  TONTINE_CLOTUREE
+  TONTINE_CLOTUREE,
+
+  /**
+   * Retrait anticipé d'épargne remis au membre (B42) ; pas envoyé pour un report du cahier daté de
+   * plus de 24 h (destinataire : membre).
+   */
+  RETRAIT_REMIS
 }
