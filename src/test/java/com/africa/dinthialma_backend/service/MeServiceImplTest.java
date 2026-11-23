@@ -27,6 +27,7 @@ import com.africa.dinthialma_backend.contribution.mapper.CotisationMapper;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
 import com.africa.dinthialma_backend.contribution.service.interfaces.CotisationService;
 import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
+import com.africa.dinthialma_backend.epargne.repository.RetraitEpargneRepository;
 import com.africa.dinthialma_backend.jackpot.service.interfaces.PrioriteJackpotService;
 import com.africa.dinthialma_backend.me.codeList.ModeActivite;
 import com.africa.dinthialma_backend.me.codeList.StatutCotisationDue;
@@ -99,6 +100,7 @@ class MeServiceImplTest {
   @Mock private PrioriteJackpotService prioriteService;
   @Mock private SuiviTourService suiviTour;
   @Mock private EcheanceCycleRepository echeanceRepository;
+  @Mock private RetraitEpargneRepository retraitRepository;
   @InjectMocks private MeServiceImpl service;
 
   private User moi;
@@ -808,6 +810,50 @@ class MeServiceImplTest {
       when(userRepository.findByKeycloakId("x")).thenReturn(Optional.empty());
       assertThatThrownBy(() -> service.validerCotisations("x", req(UUID.randomUUID())))
           .isInstanceOf(CustomException.class);
+    }
+  }
+
+  @Nested
+  @DisplayName("B42 : épargne avec retraits dans le résumé")
+  class ResumeAvecRetraits {
+
+    @Test
+    @DisplayName(
+        "événementielle : totalRetire et solde ; membre soldé : soldeLe, aucune cotisation due ;"
+            + " rotative : pas de solde")
+    void soldeEtMembreSolde() throws Exception {
+      Tontine epargne = Fixtures.tontine(gestionnaire);
+      epargne.setTontineType(TontineType.EVENEMENTIELLE);
+      Tontine rotative = Fixtures.tontine(gestionnaire);
+      TontineMembre soldee = Fixtures.membre(epargne, moi, 1);
+      soldee.setSoldeLe(LocalDateTime.of(2026, 11, 28, 18, 0));
+      TontineMembre cotisant = Fixtures.membre(rotative, moi, 1);
+      mesAdhesions(soldee, cotisant);
+      when(gagnantRepository.sumMontantRecuByUserId(moi.getId())).thenReturn(BigDecimal.ZERO);
+      when(cotisationRepository.countAndSumByMembreAndStatut(anyList()))
+          .thenReturn(
+              List.<Object[]>of(
+                  new Object[] {
+                    soldee.getId(), CotisationStatut.VALIDE, 3L, new BigDecimal("46000")
+                  }));
+      when(retraitRepository.sumRemisGroupByMembreIn(anyList()))
+          .thenReturn(List.<Object[]>of(new Object[] {soldee.getId(), new BigDecimal("46000")}));
+      CycleTontine enCours = Fixtures.cycle(epargne, 4, CycleStatut.EN_COURS);
+      when(cycleRepository.findByTontine_IdInAndStatutAndDeletedAtIsNull(
+              anyList(), eq(CycleStatut.EN_COURS)))
+          .thenReturn(List.of(enCours));
+
+      List<MeSummaryResponse.TontineCotisant> lignes = service.getSummary(kc).getTontines();
+
+      MeSummaryResponse.TontineCotisant ligneEpargne = lignes.get(0);
+      assertThat(ligneEpargne.getTotalCotiseValide()).isEqualByComparingTo("46000");
+      assertThat(ligneEpargne.getTotalRetire()).isEqualByComparingTo("46000");
+      assertThat(ligneEpargne.getSolde()).isEqualByComparingTo("0");
+      assertThat(ligneEpargne.getSoldeLe()).isEqualTo(LocalDateTime.of(2026, 11, 28, 18, 0));
+      assertThat(ligneEpargne.getCotisationDue()).isNull();
+      MeSummaryResponse.TontineCotisant ligneRotative = lignes.get(1);
+      assertThat(ligneRotative.getTotalRetire()).isNull();
+      assertThat(ligneRotative.getSolde()).isNull();
     }
   }
 }

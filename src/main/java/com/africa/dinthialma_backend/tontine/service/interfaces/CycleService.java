@@ -10,6 +10,7 @@ import com.africa.dinthialma_backend.tontine.dto.PropositionTourResponse;
 import com.africa.dinthialma_backend.tontine.dto.SelectionnerBeneficiaireRequest;
 import com.africa.dinthialma_backend.tontine.entity.Tontine;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -88,8 +89,10 @@ public interface CycleService {
    * clôturé, ce qui calcule et enregistre la part de chaque membre sur les cotisations validées.
    * Sans effet sur une rotative ou si la distribution finale est déjà faite. Les droits sont
    * vérifiés par l'appelant.
+   *
+   * @return la part de chaque membre (B51) ; vide si aucune distribution n'a eu lieu
    */
-  void distribuerMaintenant(User caller, Tontine tontine);
+  List<CycleResponse.MembreDistributionInfo> distribuerMaintenant(User caller, Tontine tontine);
 
   /**
    * Liste l'historique des bénéficiaires de jackpot d'une tontine (cycles TERMINÉ avec bénéficiaire

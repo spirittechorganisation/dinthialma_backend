@@ -67,6 +67,9 @@ public final class ResponseMessageConstants {
   public static final String TONTINE_ACTIVATED = "Tontine activée avec succès";
   public static final String TONTINE_SUSPENDED = "Tontine suspendue avec succès";
   public static final String TONTINE_CLOTUREE = "Tontine clôturée avec succès";
+  public static final String DISTRIBUTION_SUCCESS = "Répartition finale récupérée avec succès";
+  public static final String DISTRIBUTION_NON_FAITE =
+      "La distribution finale de cette tontine n'est pas encore faite";
 
   // Cycle
   public static final String CYCLE_LIST_SUCCESS = "Liste des cycles récupérée avec succès";
@@ -160,6 +163,13 @@ public final class ResponseMessageConstants {
   public static final String PRIORITE_REFUSED = "Priorité refusée";
   public static final String PRIORITE_CANCELLED = "Priorité annulée";
   public static final String PRIORITE_NOT_FOUND = "Priorité de jackpot introuvable";
+
+  // ─── Retraits anticipés d'épargne (B42) ──────────────────────────────────
+  public static final String RETRAIT_CREATED = "Retrait enregistré";
+  public static final String RETRAIT_LIST_SUCCESS = "Retraits récupérés avec succès";
+  public static final String RETRAIT_CANCELLED = "Retrait annulé";
+  public static final String RETRAIT_NOT_FOUND = "Retrait introuvable";
+  public static final String SOLDE_SUCCESS = "Solde récupéré avec succès";
   public static final String ORDRE_BENEFICIAIRE_UPDATED = "Ordre des bénéficiaires mis à jour";
   public static final String ME_GESTION_COTISATIONS_SUCCESS =
       "Paiements de mes tontines gérées récupérés avec succès";

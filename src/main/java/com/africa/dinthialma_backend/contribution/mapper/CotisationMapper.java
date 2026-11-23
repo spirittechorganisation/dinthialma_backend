@@ -156,6 +156,9 @@ public interface CotisationMapper {
       source = "totalCotise",
       defaultExpression = "java(BigDecimal.ZERO)")
   @Mapping(target = "nombreCotisationsValidees", source = "nombreCotisationsValidees")
+  @Mapping(target = "soldeLe", source = "membre.soldeLe")
+  @Mapping(target = "totalRetire", ignore = true)
+  @Mapping(target = "solde", ignore = true)
   MembreTotalCotisationResponse toTotal(
       TontineMembre membre, BigDecimal totalCotise, long nombreCotisationsValidees);
 }

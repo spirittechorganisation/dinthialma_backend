@@ -20,6 +20,8 @@ import com.africa.dinthialma_backend.contribution.dto.EtatTour;
 import com.africa.dinthialma_backend.contribution.entity.Cotisation;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
 import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
+import com.africa.dinthialma_backend.epargne.calcul.SoldeEpargne;
+import com.africa.dinthialma_backend.epargne.repository.RetraitEpargneRepository;
 import com.africa.dinthialma_backend.jackpot.service.interfaces.PrioriteJackpotService;
 import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import com.africa.dinthialma_backend.member.entity.TontineMembre;
@@ -64,6 +66,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -103,6 +106,7 @@ public class CycleServiceImpl implements CycleService {
   private final DistributionEvenementielleRepository distributionRepository;
   private final PrioriteJackpotService prioriteService;
   private final SuiviTourService suiviTour;
+  private final RetraitEpargneRepository retraitRepository;
 
   // ─── Lecture ─────────────────────────────────────────────────────────────
 
@@ -141,7 +145,33 @@ public class CycleServiceImpl implements CycleService {
     assertCanAccess(caller, tontine);
 
     CycleTontine cycle = findCycleById(tontineId, cycleId);
-    return reponse(cycle);
+    return reponse(cycle).toBuilder()
+        .distributionParMembre(distributionRelue(caller, tontine, cycle))
+        .build();
+  }
+
+  /**
+   * Répartition enregistrée à la clôture de ce sous-cycle (B51), relue : toutes les parts pour le
+   * gestionnaire et le SUPER_ADMIN, sa seule part pour un membre. Null pour un tour rotatif ou un
+   * sous-cycle qui n'a pas fait la distribution finale.
+   */
+  private List<MembreDistributionInfo> distributionRelue(
+      User caller, Tontine tontine, CycleTontine cycle) {
+    if (tontine.getTontineType() != TontineType.EVENEMENTIELLE
+        || cycle.getStatut() != CycleStatut.TERMINE) {
+      return null;
+    }
+    List<DistributionEvenementielle> parts =
+        distributionRepository.findByCycleAvecMembres(cycle.getId());
+    if (parts.isEmpty()) {
+      return null;
+    }
+    boolean gestionnaire =
+        isSuperAdmin(caller) || tontine.getCreePar().getId().equals(caller.getId());
+    return parts.stream()
+        .filter(d -> gestionnaire || d.getMembre().getUser().getId().equals(caller.getId()))
+        .map(cycleMapper::toDistributionInfo)
+        .toList();
   }
 
   // ─── Ouverture manuelle ──────────────────────────────────────────────────
@@ -335,9 +365,9 @@ public class CycleServiceImpl implements CycleService {
   // ─── Clôture de la tontine (B33) ─────────────────────────────────────────
 
   @Override
-  public void distribuerMaintenant(User caller, Tontine tontine) {
+  public List<MembreDistributionInfo> distribuerMaintenant(User caller, Tontine tontine) {
     if (tontine.getTontineType() != TontineType.EVENEMENTIELLE) {
-      return;
+      return List.of();
     }
     UUID tontineId = tontine.getId();
     List<CycleTontine> tours =
@@ -352,10 +382,12 @@ public class CycleServiceImpl implements CycleService {
               cycleRepository.save(tour);
             });
     // Plus aucun sous-cycle à venir : la clôture du sous-cycle en cours fait la distribution finale
-    tours.stream()
+    return tours.stream()
         .filter(tour -> tour.getStatut() == CycleStatut.EN_COURS)
         .findFirst()
-        .ifPresent(enCours -> closeCycleEvenementielle(caller, tontine, tontineId, enCours));
+        .map(enCours -> closeCycleEvenementielle(caller, tontine, tontineId, enCours))
+        .map(CycleResponse::getDistributionParMembre)
+        .orElse(List.of());
   }
 
   /**
@@ -615,18 +647,27 @@ public class CycleServiceImpl implements CycleService {
             distribution.stream()
                 .map(MembreDistributionInfo::getMontantCommission)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        // Mettre à jour le dernier cycle avec les totaux de toute la collecte
+        BigDecimal totalNet =
+            distribution.stream()
+                .map(MembreDistributionInfo::getMontantNet)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Dernier cycle : brut = toute la collecte ; net = ce qui est remis à la distribution
+        // (collecte − commission − retraits déjà remis, B42)
         cycle.setMontantJackpot(totalCagnotte);
         cycle.setMontantCommission(totalCommission);
-        cycle.setMontantNet(totalCagnotte.subtract(totalCommission));
+        cycle.setMontantNet(totalNet);
         cycleRepository.save(cycle);
       }
 
       enregistrerDistribution(tontine, cycle, distribution);
       notifyFinalDistribution(tontine, distribution);
 
-      // Notifications in-app distribution finale
+      // Notifications in-app distribution finale (pas aux membres soldés, qui n'ont rien à
+      // recevoir)
       for (MembreDistributionInfo dist : distribution) {
+        if (!aRecevoir(dist)) {
+          continue;
+        }
         notificationService.notify(
             dist.getUserId(),
             NotificationType.DISTRIBUTION_FINALE,
@@ -698,15 +739,24 @@ public class CycleServiceImpl implements CycleService {
     }
     if (totalParMembre.isEmpty()) return List.of();
 
+    // B42 : les retraits déjà remis sont déduits ; la commission porte sur ce qui reste réellement
+    // à distribuer (cotisé − retiré), au prorata. Un membre soldé garde une ligne à 0.
+    Map<UUID, BigDecimal> retraitParMembre = new HashMap<>();
+    for (Object[] row : retraitRepository.sumRemisGroupByMembre(tontineId)) {
+      retraitParMembre.put((UUID) row[0], (BigDecimal) row[1]);
+    }
     List<UUID> membreIds = new ArrayList<>(totalParMembre.keySet());
     List<BigDecimal> mises = membreIds.stream().map(totalParMembre::get).toList();
-    BigDecimal totalCagnotte = mises.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-    List<BigDecimal> commissionsParMembre =
-        Montants.repartirAuProrata(commissionTotale(commissions, totalCagnotte), mises);
+    List<BigDecimal> retraits =
+        membreIds.stream().map(id -> retraitParMembre.getOrDefault(id, BigDecimal.ZERO)).toList();
+    BigDecimal base = SoldeEpargne.baseDistribuable(mises, retraits);
+    List<SoldeEpargne.Part> parts =
+        SoldeEpargne.parts(mises, retraits, commissionTotale(commissions, base));
 
     List<MembreDistributionInfo> result = new ArrayList<>();
     for (int i = 0; i < membreIds.size(); i++) {
       TontineMembre m = membreMap.get(membreIds.get(i));
+      SoldeEpargne.Part part = parts.get(i);
       result.add(
           MembreDistributionInfo.builder()
               .membreId(m.getId())
@@ -714,12 +764,18 @@ public class CycleServiceImpl implements CycleService {
               .firstName(m.getUser().getFirstName())
               .lastName(m.getUser().getLastName())
               .phone(m.getUser().getPhone())
-              .montantCotise(mises.get(i))
-              .montantCommission(commissionsParMembre.get(i))
-              .montantNet(mises.get(i).subtract(commissionsParMembre.get(i)))
+              .montantCotise(part.cotise())
+              .montantCommission(part.commission())
+              .montantRetire(part.retire())
+              .montantNet(part.net())
               .build());
     }
     return result;
+  }
+
+  /** Membre qui n'a plus rien à recevoir parce qu'il a déjà tout retiré (B42) : pas de message. */
+  private static boolean aRecevoir(MembreDistributionInfo part) {
+    return part.getMontantNet().signum() > 0 || part.getMontantRetire().signum() == 0;
   }
 
   /**
@@ -759,6 +815,7 @@ public class CycleServiceImpl implements CycleService {
                         .membre(membreRepository.getReferenceById(d.getMembreId()))
                         .montantCotise(d.getMontantCotise())
                         .montantCommission(d.getMontantCommission())
+                        .montantRetire(d.getMontantRetire())
                         .montantNet(d.getMontantNet())
                         .build())
             .toList());
@@ -766,6 +823,9 @@ public class CycleServiceImpl implements CycleService {
 
   private void notifyFinalDistribution(Tontine tontine, List<MembreDistributionInfo> distribution) {
     for (MembreDistributionInfo dist : distribution) {
+      if (!aRecevoir(dist)) {
+        continue;
+      }
       try {
         whatsappService.sendDistributionFinale(
             dist.getPhone(),

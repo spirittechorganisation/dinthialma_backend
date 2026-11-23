@@ -40,6 +40,7 @@ import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
 import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.MonRoleTontine;
+import com.africa.dinthialma_backend.tontine.codeList.RegleRetrait;
 import com.africa.dinthialma_backend.tontine.codeList.RoleFiltreTontine;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
@@ -1179,6 +1180,68 @@ class TontineServiceImplTest {
       when(cycleRepository.existsByTontine_IdAndDeletedAtIsNull(tontine.getId())).thenReturn(true);
       assertThat(service.activateTontine(gestionnaire.getKeycloakId(), tontine.getId()).getStatut())
           .isEqualTo(TontineStatut.ACTIVE);
+    }
+  }
+
+  @Nested
+  @DisplayName("B42 : règle de retrait anticipé")
+  class RegleDeRetrait {
+
+    private ModifierReglagesRequest regle(RegleRetrait regle) {
+      ModifierReglagesRequest r = new ModifierReglagesRequest();
+      r.setRegleRetrait(regle);
+      return r;
+    }
+
+    @Test
+    @DisplayName("création : LIBRE pour une événementielle, INTERDIT pour une rotative")
+    void creation() throws Exception {
+      assertThat(
+              service
+                  .createTontine(gestionnaire.getKeycloakId(), requeteEvenementielle())
+                  .getRegleRetrait())
+          .isEqualTo(RegleRetrait.LIBRE);
+      assertThat(service.createTontine(gestionnaire.getKeycloakId(), rotative()).getRegleRetrait())
+          .isEqualTo(RegleRetrait.INTERDIT);
+    }
+
+    @Test
+    @DisplayName("événementielle en cours : règle modifiable et auditée")
+    void modification() throws Exception {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      tontine.setStatut(TontineStatut.ACTIVE);
+      tontine.setRegleRetrait(RegleRetrait.INTERDIT);
+
+      TontineResponse r =
+          service.modifierReglages(
+              gestionnaire.getKeycloakId(), tontine.getId(), regle(RegleRetrait.LIBRE));
+
+      assertThat(r.getRegleRetrait()).isEqualTo(RegleRetrait.LIBRE);
+      verify(auditService)
+          .log(gestionnaire, "tontines", tontine.getId(), "regleRetrait", "INTERDIT", "LIBRE");
+    }
+
+    @Test
+    @DisplayName(
+        "rotative → RETRAIT_NON_DISPONIBLE ; option de remise sur une événementielle → 400")
+    void refus() {
+      tontine.setStatut(TontineStatut.ACTIVE);
+      assertThatThrownBy(
+              () ->
+                  service.modifierReglages(
+                      gestionnaire.getKeycloakId(), tontine.getId(), regle(RegleRetrait.LIBRE)))
+          .satisfies(
+              e ->
+                  assertThat(((CustomException) e).getCode())
+                      .isEqualTo(ErrorCode.RETRAIT_NON_DISPONIBLE));
+
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      ModifierReglagesRequest les2 = regle(RegleRetrait.LIBRE);
+      les2.setModeRemise(ModeRemise.ATTENDRE);
+      assertThatThrownBy(
+              () -> service.modifierReglages(gestionnaire.getKeycloakId(), tontine.getId(), les2))
+          .isInstanceOf(BadRequestException.class);
+      assertThat(tontine.getRegleRetrait()).isNull();
     }
   }
 }

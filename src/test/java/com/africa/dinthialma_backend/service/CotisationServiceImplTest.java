@@ -39,6 +39,7 @@ import com.africa.dinthialma_backend.contribution.entity.Cotisation;
 import com.africa.dinthialma_backend.contribution.mapper.CotisationMapper;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
 import com.africa.dinthialma_backend.contribution.service.impl.CotisationServiceImpl;
+import com.africa.dinthialma_backend.epargne.repository.RetraitEpargneRepository;
 import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import com.africa.dinthialma_backend.member.entity.TontineMembre;
 import com.africa.dinthialma_backend.member.repository.TontineMembreRepository;
@@ -99,6 +100,7 @@ class CotisationServiceImplTest {
   @Mock private CycleService cycleService;
   @Mock private RemiseService remiseService;
   @Mock private DistributionEvenementielleRepository distributionRepository;
+  @Mock private RetraitEpargneRepository retraitRepository;
   @InjectMocks private CotisationServiceImpl service;
 
   private User gestionnaire;
@@ -1274,6 +1276,77 @@ class CotisationServiceImplTest {
           service.validateCotisation(gestionnaire.getKeycloakId(), tontine.getId(), c.getId());
 
       assertThat(r.getStatut()).isEqualTo(CotisationStatut.VALIDE);
+    }
+  }
+
+  @Nested
+  @DisplayName("B42 : membre soldé et récap total avec retraits")
+  class MembreSolde {
+
+    private final Pageable page = PageRequest.of(0, 20);
+
+    @Test
+    @DisplayName("membre soldé : déclaration et saisie refusées → MEMBRE_SOLDE")
+    void cotisationRefusee() {
+      membre.setSoldeLe(LocalDateTime.now().minusDays(1));
+
+      assertThatThrownBy(
+              () ->
+                  service.adminRecordCotisation(
+                      gestionnaire.getKeycloakId(), tontine.getId(), saisie("1000", null)))
+          .isInstanceOf(BadRequestException.class)
+          .satisfies(e -> code(e, ErrorCode.MEMBRE_SOLDE));
+      assertThatThrownBy(
+              () ->
+                  service.recordCotisation(
+                      awa.getKeycloakId(), tontine.getId(), declaration("1000")))
+          .isInstanceOf(BadRequestException.class)
+          .satisfies(e -> code(e, ErrorCode.MEMBRE_SOLDE));
+      verify(cotisationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("récap total d'une événementielle : totalRetire, solde et soldeLe par membre")
+    void recapTotalEvenementielle() throws Exception {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      membre.setSoldeLe(LocalDateTime.of(2026, 11, 28, 18, 0));
+      when(membreRepository.findByTontine_IdAndStatutNotAndDeletedAtIsNull(
+              tontine.getId(), MembreStatut.SORTI, page))
+          .thenReturn(new PageImpl<>(List.of(membre)));
+      when(cotisationRepository.sumAndCountValideGroupByMembreIn(eq(tontine.getId()), anyList()))
+          .thenReturn(
+              List.<Object[]>of(new Object[] {membre.getId(), new BigDecimal("46000"), 3L}));
+      when(retraitRepository.sumRemisGroupByMembreIn(anyList()))
+          .thenReturn(List.<Object[]>of(new Object[] {membre.getId(), new BigDecimal("46000")}));
+
+      MembreTotalCotisationResponse r =
+          service
+              .getTontineRecapTotal(gestionnaire.getKeycloakId(), tontine.getId(), page)
+              .getContent()
+              .get(0);
+
+      assertThat(r.getTotalCotise()).isEqualByComparingTo("46000");
+      assertThat(r.getTotalRetire()).isEqualByComparingTo("46000");
+      assertThat(r.getSolde()).isEqualByComparingTo("0");
+      assertThat(r.getSoldeLe()).isEqualTo(LocalDateTime.of(2026, 11, 28, 18, 0));
+    }
+
+    @Test
+    @DisplayName("récap total d'une rotative : pas de solde (null), aucune requête de retrait")
+    void recapTotalRotative() throws Exception {
+      when(membreRepository.findByTontine_IdAndStatutNotAndDeletedAtIsNull(
+              tontine.getId(), MembreStatut.SORTI, page))
+          .thenReturn(new PageImpl<>(List.of(membre)));
+
+      MembreTotalCotisationResponse r =
+          service
+              .getTontineRecapTotal(gestionnaire.getKeycloakId(), tontine.getId(), page)
+              .getContent()
+              .get(0);
+
+      assertThat(r.getTotalRetire()).isNull();
+      assertThat(r.getSolde()).isNull();
+      verify(retraitRepository, never()).sumRemisGroupByMembreIn(any());
     }
   }
 }

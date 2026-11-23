@@ -142,6 +142,10 @@ public interface CotisationRepository
   /** Nombre de cotisations d'une tontine par statut. */
   long countByTontine_IdAndStatutAndDeletedAtIsNull(UUID tontineId, CotisationStatut statut);
 
+  /** Cotisations d'un membership dans ces statuts (B42 : à traiter avant un retrait total). */
+  long countByMembre_IdAndStatutInAndDeletedAtIsNull(
+      UUID membreId, Collection<CotisationStatut> statuts);
+
   /** Montant total des cotisations VALIDÉES depuis une date (plateforme). */
   @Query(
       "SELECT COALESCE(SUM(c.montant), 0) FROM Cotisation c"

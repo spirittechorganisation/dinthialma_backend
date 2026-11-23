@@ -31,6 +31,8 @@ import com.africa.dinthialma_backend.contribution.mapper.CotisationMapper;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
 import com.africa.dinthialma_backend.contribution.repository.CotisationSpecifications;
 import com.africa.dinthialma_backend.contribution.service.interfaces.CotisationService;
+import com.africa.dinthialma_backend.epargne.calcul.SoldeEpargne;
+import com.africa.dinthialma_backend.epargne.repository.RetraitEpargneRepository;
 import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import com.africa.dinthialma_backend.member.entity.TontineMembre;
 import com.africa.dinthialma_backend.member.repository.TontineMembreRepository;
@@ -89,6 +91,7 @@ public class CotisationServiceImpl implements CotisationService {
   private final CycleService cycleService;
   private final RemiseService remiseService;
   private final DistributionEvenementielleRepository distributionRepository;
+  private final RetraitEpargneRepository retraitRepository;
 
   // ─── Enregistrement ──────────────────────────────────────────────────────
 
@@ -886,13 +889,28 @@ public class CotisationServiceImpl implements CotisationService {
     Map<UUID, Object[]> totauxByMembre =
         cotisationRepository.sumAndCountValideGroupByMembreIn(tontineId, membreIds).stream()
             .collect(Collectors.toMap(row -> (UUID) row[0], row -> row));
+    // B42 : épargne événementielle → retraits remis et solde par membre ; rien en rotative
+    boolean epargne = tontine.getTontineType() == TontineType.EVENEMENTIELLE;
+    Map<UUID, BigDecimal> retraitsByMembre =
+        epargne
+            ? retraitRepository.sumRemisGroupByMembreIn(membreIds).stream()
+                .collect(Collectors.toMap(row -> (UUID) row[0], row -> (BigDecimal) row[1]))
+            : Map.of();
 
     return membres.map(
         m -> {
           Object[] row = totauxByMembre.get(m.getId());
           BigDecimal total = row != null ? (BigDecimal) row[1] : BigDecimal.ZERO;
           long nombre = row != null ? (Long) row[2] : 0L;
-          return cotisationMapper.toTotal(m, total, nombre);
+          MembreTotalCotisationResponse ligne = cotisationMapper.toTotal(m, total, nombre);
+          if (!epargne) {
+            return ligne;
+          }
+          BigDecimal retire = retraitsByMembre.getOrDefault(m.getId(), BigDecimal.ZERO);
+          return ligne.toBuilder()
+              .totalRetire(retire)
+              .solde(SoldeEpargne.solde(total, retire))
+              .build();
         });
   }
 
@@ -1006,6 +1024,16 @@ public class CotisationServiceImpl implements CotisationService {
    */
   private static void verifierMembreActif(TontineMembre membre, boolean parLeMembre)
       throws CustomException {
+    // B42 : un membre qui a retiré toute son épargne ne cotise plus
+    if (membre.getSoldeLe() != null) {
+      throw new BadRequestException(
+          parLeMembre
+              ? "Vous avez retiré toute votre épargne : vous ne pouvez plus cotiser dans cette"
+                  + " tontine"
+              : "Ce membre a retiré toute son épargne : annulez son retrait total avant"
+                  + " d'enregistrer une cotisation",
+          ErrorCode.MEMBRE_SOLDE);
+    }
     if (membre.getStatut() == MembreStatut.ACTIF) {
       return;
     }

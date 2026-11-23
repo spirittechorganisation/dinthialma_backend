@@ -21,6 +21,7 @@ public interface TontineMapper {
   @Mapping(target = "monRole", ignore = true)
   @Mapping(target = "monMembreId", ignore = true)
   @Mapping(target = "monStatutMembre", ignore = true)
+  @Mapping(target = "distributionParMembre", ignore = true)
   @Mapping(target = "rappels", source = "tontine", qualifiedByName = "rappels")
   TontineResponse toResponse(Tontine tontine, int nombreMembresActuels);
 

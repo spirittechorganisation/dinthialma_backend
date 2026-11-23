@@ -60,6 +60,13 @@ public class MembreResponse {
       nullable = true)
   private LocalDateTime dateJackpot;
 
+  @Schema(
+      description =
+          "Date du retrait total de son épargne (B42) : membre « soldé », il ne cotise plus ;"
+              + " null sinon",
+      nullable = true)
+  private LocalDateTime soldeLe;
+
   @Schema(description = "Date d'ajout du membre")
   private LocalDateTime createdAt;
 
