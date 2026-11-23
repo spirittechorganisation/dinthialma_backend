@@ -64,7 +64,9 @@ public class RetraitEpargneController {
               + " avant la distribution finale, règle de retrait `LIBRE`. Le retrait est créé"
               + " **REMIS** (argent déjà remis).\n\n"
               + "`PARTIEL` : `montant` obligatoire, ≤ solde. `TOTAL` : tout le solde, le membre"
-              + " devient soldé (`soldeLe`) : plus de cotisation ni de rappel.\n\n"
+              + " devient soldé (`soldeLe`) : plus de cotisation ni de rappel. Refusé tant que le"
+              + " membre a des cotisations EN_ATTENTE ou EN_RETARD : les valider ou les refuser"
+              + " d'abord.\n\n"
               + "`dateRemise` (facultative, défaut maintenant) : date réelle, pour reporter les"
               + " retraits notés dans le cahier ; jamais future, pas avant le début de la tontine."
               + " Membre notifié (`RETRAIT_REMIS`, in-app + WhatsApp), sauf si `dateRemise` date"
@@ -79,6 +81,8 @@ public class RetraitEpargneController {
         description =
             "`RETRAIT_NON_DISPONIBLE` (rotative, pas active, terminée ou distribuée),"
                 + " `RETRAIT_INTERDIT`, `MEMBRE_SOLDE`, `RETRAIT_SOLDE_INSUFFISANT` (`data.solde`),"
+                + " `RETRAIT_COTISATIONS_EN_ATTENTE` (retrait total avec des cotisations"
+                + " EN_ATTENTE ou EN_RETARD à traiter d'abord, `data.cotisationsEnAttente`),"
                 + " `INVALID_PARAMETER` (montant ou date), `VALIDATION_ERROR`"),
     @ApiResponse(responseCode = "403", description = "Accès interdit"),
     @ApiResponse(responseCode = "404", description = "Tontine ou membre introuvable"),
