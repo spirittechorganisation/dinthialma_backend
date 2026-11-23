@@ -11,6 +11,7 @@ import com.africa.dinthialma_backend.auth.entity.UserSession;
 import com.africa.dinthialma_backend.auth.repository.OtpVerificationRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRepository;
 import com.africa.dinthialma_backend.auth.service.interfaces.KeycloakAuthService;
+import com.africa.dinthialma_backend.auth.service.interfaces.OtpGardeService;
 import com.africa.dinthialma_backend.auth.service.interfaces.PinService;
 import com.africa.dinthialma_backend.auth.service.interfaces.UserSessionService;
 import com.africa.dinthialma_backend.common.constants.Constants;
@@ -55,6 +56,7 @@ public class PinServiceImpl implements PinService {
   private final UserSessionService userSessionService;
   private final KeycloakAuthService keycloakAuthService;
   private final WhatsappService whatsappService;
+  private final OtpGardeService otpGarde;
 
   /**
    * Encodeur Argon2id – paramètres renforcés pour les PINs courts (6 chiffres). saltLength=16,
@@ -82,6 +84,7 @@ public class PinServiceImpl implements PinService {
     String pinHash = ARGON2.encode(request.getPin());
     user.setPinHash(pinHash);
     user.setPinAttempts(0);
+    user.setPinEchecsCumules(0);
     user.setPinLockedUntil(null);
     user.setPinCreatedAt(LocalDateTime.now()); // ← horodatage pour expiration 90j
     userRepository.save(user);
@@ -98,9 +101,10 @@ public class PinServiceImpl implements PinService {
     log.debug(
         "Tentative de connexion PIN pour phone={} clientType={}", phone, request.getClientType());
 
+    // Relecture verrouillée : deux appareils en parallèle comptent leurs échecs sans en perdre
     User user =
         userRepository
-            .findByPhone(phone)
+            .findByPhoneForUpdate(phone)
             .orElseThrow(() -> new NotFoundException(ResponseMessageConstants.AUTH_USER_NOT_FOUND));
 
     verifierPinUtilisable(user);
@@ -113,6 +117,7 @@ public class PinServiceImpl implements PinService {
 
     // PIN valide → remettre les compteurs à zéro
     user.setPinAttempts(0);
+    user.setPinEchecsCumules(0);
     user.setPinLockedUntil(null);
 
     UserSession session = sessionPourPin(user, request.getClientType());
@@ -249,6 +254,9 @@ public class PinServiceImpl implements PinService {
     phone = PhoneUtils.normalize(phone);
     log.debug("Envoi OTP reset PIN pour : {}", phone);
 
+    // Limite d'envoi appliquée avant le test d'existence : même réponse pour un numéro inconnu
+    otpGarde.autoriserEnvoi(phone, Constants.OtpPurpose.RESET_PIN);
+
     if (!userRepository.existsByPhone(phone)) {
       // Anti-énumération : réponse silencieuse
       log.debug("Numéro {} inconnu – réponse silencieuse (anti-énumération PIN)", phone);
@@ -303,8 +311,7 @@ public class PinServiceImpl implements PinService {
     }
     if (!otp.getCode().equals(code)) {
       log.warn("OTP reset PIN incorrect pour : {}", phone);
-      throw new BadRequestException(
-          ResponseMessageConstants.AUTH_OTP_INVALID, ErrorCode.OTP_INVALID);
+      throw OtpGardeService.erreurCodeFaux(otpGarde.enregistrerEchec(otp));
     }
 
     otp.setVerified(true);
@@ -343,6 +350,7 @@ public class PinServiceImpl implements PinService {
     // Mettre à jour le PIN
     user.setPinHash(ARGON2.encode(request.getNewPin()));
     user.setPinAttempts(0);
+    user.setPinEchecsCumules(0);
     user.setPinLockedUntil(null);
     user.setPinCreatedAt(LocalDateTime.now()); // ← renouvellement de l'horodatage
     userRepository.save(user);
@@ -368,10 +376,18 @@ public class PinServiceImpl implements PinService {
 
   // ─── Helpers privés ───────────────────────────────────────────────
 
-  /** Incrémente les tentatives échouées et verrouille si nécessaire. */
+  /**
+   * Incrémente les tentatives échouées : verrou de 15 min à la 5ᵉ consécutive ; PIN invalidé à la
+   * 10ᵉ cumulée depuis le dernier succès (SE07), avec révocation des sessions de l'utilisateur.
+   */
   private void handlePinFailure(User user) throws CustomException {
     int newAttempts = user.getPinAttempts() + 1;
     user.setPinAttempts(newAttempts);
+    user.setPinEchecsCumules(user.getPinEchecsCumules() + 1);
+
+    if (user.getPinEchecsCumules() >= Constants.Pin.MAX_ECHECS_CUMULES) {
+      invaliderPin(user);
+    }
 
     if (newAttempts >= Constants.Pin.MAX_ATTEMPTS) {
       LocalDateTime lockUntil =
@@ -401,6 +417,25 @@ public class PinServiceImpl implements PinService {
         Constants.Pin.MAX_ATTEMPTS);
     throw new UnAuthorizedException(
         ResponseMessageConstants.AUTH_PIN_INVALID, ErrorCode.PIN_INVALID);
+  }
+
+  /**
+   * PIN invalidé après trop d'échecs cumulés : il faut se reconnecter avec le mot de passe (ou
+   * réinitialiser le PIN par OTP) puis en créer un nouveau. Toutes les sessions sont révoquées.
+   */
+  private void invaliderPin(User user) throws CustomException {
+    user.setPinHash(null);
+    user.setPinAttempts(0);
+    user.setPinEchecsCumules(0);
+    user.setPinLockedUntil(null);
+    userRepository.save(user);
+    userSessionService.revokeAllSessions(user.getId());
+    log.warn(
+        "PIN invalidé après {} échecs cumulés – userId={}",
+        Constants.Pin.MAX_ECHECS_CUMULES,
+        user.getId());
+    throw new UnAuthorizedException(
+        ResponseMessageConstants.AUTH_PIN_DISABLED, ErrorCode.PIN_DISABLED);
   }
 
   /** Valide le format du PIN : 6 chiffres, non trivial. */

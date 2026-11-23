@@ -3,6 +3,7 @@ package com.africa.dinthialma_backend.auth.repository;
 import com.africa.dinthialma_backend.auth.codeList.AccountStatus;
 import com.africa.dinthialma_backend.auth.codeList.UserRole;
 import com.africa.dinthialma_backend.auth.entity.User;
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -12,6 +13,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -22,6 +24,15 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
   Optional<User> findByKeycloakId(String keycloakId);
 
   Optional<User> findByPhone(String phone);
+
+  /**
+   * Utilisateur relu avec un verrou d'écriture (SELECT … FOR UPDATE) jusqu'à la fin de la
+   * transaction : deux connexions par PIN en parallèle (deux appareils) comptent leurs échecs l'une
+   * après l'autre, sans en perdre (SE07).
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT u FROM User u WHERE u.phone = :phone")
+  Optional<User> findByPhoneForUpdate(@Param("phone") String phone);
 
   Optional<User> findByPhoneAndDeletedAtIsNull(String phone);
 

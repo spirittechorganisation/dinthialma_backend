@@ -23,6 +23,7 @@ import com.africa.dinthialma_backend.auth.repository.OtpVerificationRepository;
 import com.africa.dinthialma_backend.auth.repository.UserRepository;
 import com.africa.dinthialma_backend.auth.service.impl.PinServiceImpl;
 import com.africa.dinthialma_backend.auth.service.interfaces.KeycloakAuthService;
+import com.africa.dinthialma_backend.auth.service.interfaces.OtpGardeService;
 import com.africa.dinthialma_backend.auth.service.interfaces.UserSessionService;
 import com.africa.dinthialma_backend.common.constants.Constants;
 import com.africa.dinthialma_backend.common.exception.CustomException;
@@ -60,6 +61,7 @@ class PinServiceImplTest {
   @Mock private UserSessionService userSessionService;
   @Mock private KeycloakAuthService keycloakAuthService;
   @Mock private WhatsappService whatsappService;
+  @Mock private OtpGardeService otpGarde;
   @InjectMocks private PinServiceImpl service;
 
   private User user;
@@ -77,6 +79,7 @@ class PinServiceImplTest {
         .when(userRepository.findByKeycloakId(user.getKeycloakId()))
         .thenReturn(Optional.of(user));
     lenient().when(userRepository.findByPhone(TEL)).thenReturn(Optional.of(user));
+    lenient().when(userRepository.findByPhoneForUpdate(TEL)).thenReturn(Optional.of(user));
   }
 
   private static void codeAttendu(Throwable e, ErrorCode code) {
@@ -234,12 +237,14 @@ class PinServiceImplTest {
     }
 
     @Test
-    @DisplayName("5e échec : verrouillage 30 min -> 429 PIN_LOCKED avec délai")
+    @DisplayName("5e échec : verrouillage 15 min (SE07) -> 429 PIN_LOCKED avec délai")
     void verrouillage() {
       user.setPinAttempts(Constants.Pin.MAX_ATTEMPTS - 1);
       assertThatThrownBy(() -> service.loginWithPin(req("000001", ClientType.WEB)))
           .satisfies(e -> codeAttendu(e, ErrorCode.PIN_LOCKED));
-      assertThat(user.getPinLockedUntil()).isAfter(LocalDateTime.now().plusMinutes(29));
+      assertThat(user.getPinLockedUntil())
+          .isAfter(LocalDateTime.now().plusMinutes(14))
+          .isBefore(LocalDateTime.now().plusMinutes(16));
       assertThat(user.getPinAttempts()).isZero();
     }
 
@@ -269,7 +274,7 @@ class PinServiceImplTest {
       user.setActive(false);
       assertThatThrownBy(() -> service.loginWithPin(req(PIN, ClientType.WEB)))
           .satisfies(e -> codeAttendu(e, ErrorCode.ACCOUNT_DISABLED));
-      when(userRepository.findByPhone(TEL)).thenReturn(Optional.empty());
+      when(userRepository.findByPhoneForUpdate(TEL)).thenReturn(Optional.empty());
       assertThatThrownBy(() -> service.loginWithPin(req(PIN, ClientType.WEB)))
           .isInstanceOf(NotFoundException.class);
     }
@@ -380,6 +385,101 @@ class PinServiceImplTest {
       assertThatThrownBy(() -> service.resetPin(req(PIN, PIN)))
           .isInstanceOf(NotFoundException.class);
       verify(userSessionService, never()).revokeAllSessions(any());
+    }
+  }
+
+  @Nested
+  @DisplayName("SE07 : échecs cumulés, OTP limités")
+  class Securite {
+
+    private PinLoginRequest faux() {
+      PinLoginRequest r = new PinLoginRequest();
+      r.setPhone(TEL);
+      r.setPin("000001");
+      r.setClientType(ClientType.WEB);
+      return r;
+    }
+
+    @BeforeEach
+    void pinConfigure() {
+      user.setPinHash(hashPin);
+      user.setPinCreatedAt(LocalDateTime.now().minusDays(1));
+    }
+
+    @Test
+    @DisplayName("10ᵉ échec cumulé : PIN invalidé, sessions révoquées → 401 PIN_DISABLED")
+    void invalidation() throws Exception {
+      user.setPinEchecsCumules(Constants.Pin.MAX_ECHECS_CUMULES - 1);
+      user.setPinAttempts(4);
+
+      assertThatThrownBy(() -> service.loginWithPin(faux()))
+          .satisfies(e -> codeAttendu(e, ErrorCode.PIN_DISABLED));
+
+      assertThat(user.getPinHash()).isNull();
+      assertThat(user.getPinEchecsCumules()).isZero();
+      assertThat(user.getPinAttempts()).isZero();
+      assertThat(user.getPinLockedUntil()).isNull();
+      verify(userSessionService).revokeAllSessions(user.getId());
+      verify(userRepository).save(user);
+    }
+
+    @Test
+    @DisplayName("le verrou de 15 min ne remet pas le cumul à zéro ; retryAfterSeconds = 900")
+    void cumulConserveAuVerrou() {
+      user.setPinAttempts(Constants.Pin.MAX_ATTEMPTS - 1);
+      user.setPinEchecsCumules(4);
+
+      assertThatThrownBy(() -> service.loginWithPin(faux()))
+          .satisfies(
+              e -> {
+                codeAttendu(e, ErrorCode.PIN_LOCKED);
+                assertThat(((CustomException) e).getDetails())
+                    .containsEntry("retryAfterSeconds", 900L);
+              });
+      assertThat(user.getPinEchecsCumules()).isEqualTo(5);
+      assertThat(user.getPinHash()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("configuration du PIN : cumul remis à zéro")
+    void configurationRemetLeCumul() throws Exception {
+      user.setPinEchecsCumules(7);
+      PinSetupRequest r = new PinSetupRequest();
+      r.setPin(PIN);
+      r.setConfirmPin(PIN);
+
+      service.setupPin(user.getKeycloakId(), r);
+
+      assertThat(user.getPinEchecsCumules()).isZero();
+    }
+
+    @Test
+    @DisplayName("envoi OTP du PIN : limite horaire appliquée avant le test d'existence")
+    void limiteAvantExistence() throws Exception {
+      when(userRepository.existsByPhone("221779999999")).thenReturn(false);
+
+      service.sendResetPinOtp("+221779999999");
+
+      verify(otpGarde).autoriserEnvoi("221779999999", P);
+      verify(otpRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("5ᵉ code OTP faux pour le PIN → OTP_TOO_MANY_ATTEMPTS")
+    void codeEpuise() {
+      OtpVerification otp =
+          OtpVerification.builder()
+              .phone(TEL)
+              .code("111111")
+              .purpose(P)
+              .expiresAt(LocalDateTime.now().plusMinutes(5))
+              .build();
+      when(otpRepository.findTopByPhoneAndPurposeAndUsedFalseOrderByCreatedAtDesc(TEL, P))
+          .thenReturn(Optional.of(otp));
+      when(otpGarde.enregistrerEchec(otp)).thenReturn(true);
+
+      assertThatThrownBy(() -> service.verifyResetPinOtp(TEL, "222222"))
+          .satisfies(e -> codeAttendu(e, ErrorCode.OTP_TOO_MANY_ATTEMPTS));
     }
   }
 }

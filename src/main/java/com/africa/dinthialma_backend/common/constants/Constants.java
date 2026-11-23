@@ -46,8 +46,14 @@ public final class Constants {
     /** Nombre maximal de tentatives incorrectes avant verrouillage. */
     public static final int MAX_ATTEMPTS = 5;
 
-    /** Durée du verrouillage en minutes après MAX_ATTEMPTS échecs. */
-    public static final int LOCK_DURATION_MINUTES = 30;
+    /** Durée du verrouillage en minutes après MAX_ATTEMPTS échecs (15 min depuis SE07). */
+    public static final int LOCK_DURATION_MINUTES = 15;
+
+    /**
+     * Échecs cumulés depuis le dernier succès au-delà desquels le PIN est invalidé (SE07) : retour
+     * obligatoire au mot de passe ou à l'OTP, puis nouveau PIN.
+     */
+    public static final int MAX_ECHECS_CUMULES = 10;
 
     /**
      * Durée de validité du PIN en jours. Passé ce délai, l'utilisateur doit reconfigurer son PIN.
@@ -81,6 +87,12 @@ public final class Constants {
   public static final class Otp {
     /** Durée de validité d'un OTP en minutes. */
     public static final long EXPIRY_MINUTES = 10;
+
+    /** Envois d'OTP au plus par numéro et par heure, tous motifs confondus (SE07). */
+    public static final int MAX_ENVOIS_PAR_HEURE = 3;
+
+    /** Essais faux au plus sur un même code ; le code est ensuite invalidé (SE07). */
+    public static final int MAX_ESSAIS_PAR_CODE = 5;
 
     private Otp() {}
   }
