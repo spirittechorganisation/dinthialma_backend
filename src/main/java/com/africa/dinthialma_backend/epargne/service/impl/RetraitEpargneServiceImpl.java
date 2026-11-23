@@ -12,6 +12,7 @@ import com.africa.dinthialma_backend.common.security.AccessControl;
 import com.africa.dinthialma_backend.common.util.CsvExport;
 import com.africa.dinthialma_backend.common.util.CsvWriter;
 import com.africa.dinthialma_backend.common.util.FichierExport;
+import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
 import com.africa.dinthialma_backend.epargne.calcul.SoldeEpargne;
 import com.africa.dinthialma_backend.epargne.codeList.NatureRetrait;
@@ -65,6 +66,10 @@ public class RetraitEpargneServiceImpl implements RetraitEpargneService {
 
   private static final DateTimeFormatter JOUR = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
+  /** Cotisations encore validables qui bloquent un retrait total (B42). */
+  private static final List<CotisationStatut> A_TRAITER_AVANT_RETRAIT_TOTAL =
+      List.of(CotisationStatut.EN_ATTENTE, CotisationStatut.EN_RETARD);
+
   private final RetraitEpargneRepository retraitRepository;
   private final RetraitEpargneMapper retraitMapper;
   private final TontineRepository tontineRepository;
@@ -93,6 +98,9 @@ public class RetraitEpargneServiceImpl implements RetraitEpargneService {
           "Ce membre a déjà retiré toute son épargne : annulez son retrait total pour revenir en"
               + " arrière",
           ErrorCode.MEMBRE_SOLDE);
+    }
+    if (request.getNature() == NatureRetrait.TOTAL) {
+      verifierRienEnAttente(membre);
     }
     LocalDateTime maintenant = LocalDateTime.now(horloge);
     LocalDateTime dateRemise = dateRemise(tontine, request.getDateRemise(), maintenant);
@@ -164,6 +172,25 @@ public class RetraitEpargneServiceImpl implements RetraitEpargneService {
       throw soldeInsuffisant(solde);
     }
     return demande;
+  }
+
+  /**
+   * Retrait total : aucune cotisation EN_ATTENTE ou EN_RETARD (encore validable, B33) ne doit
+   * rester, sinon sa validation redonnerait un solde positif à un membre soldé.
+   */
+  private void verifierRienEnAttente(TontineMembre membre) throws CustomException {
+    long enAttente =
+        cotisationRepository.countByMembre_IdAndStatutInAndDeletedAtIsNull(
+            membre.getId(), A_TRAITER_AVANT_RETRAIT_TOTAL);
+    if (enAttente > 0) {
+      throw new BadRequestException(
+          "Ce membre a "
+              + enAttente
+              + " cotisation(s) en attente de validation : validez-les ou refusez-les avant son"
+              + " retrait total",
+          ErrorCode.RETRAIT_COTISATIONS_EN_ATTENTE,
+          Map.of("cotisationsEnAttente", enAttente));
+    }
   }
 
   private static CustomException soldeInsuffisant(BigDecimal solde) {

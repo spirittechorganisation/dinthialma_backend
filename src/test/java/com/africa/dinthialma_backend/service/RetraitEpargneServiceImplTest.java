@@ -20,6 +20,7 @@ import com.africa.dinthialma_backend.common.exception.ForbiddenException;
 import com.africa.dinthialma_backend.common.exception.NotFoundException;
 import com.africa.dinthialma_backend.common.security.AccessControl;
 import com.africa.dinthialma_backend.common.util.FichierExport;
+import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
 import com.africa.dinthialma_backend.epargne.codeList.NatureRetrait;
 import com.africa.dinthialma_backend.epargne.codeList.OrigineRetrait;
@@ -243,6 +244,44 @@ class RetraitEpargneServiceImplTest {
               eq(tontine.getId()),
               any(NotificationLiens.class));
       verify(whatsappService).sendRetraitRemis(awa.getPhone(), tontine.getNom(), "10000", "30000");
+    }
+
+    @Test
+    @DisplayName(
+        "total avec des cotisations en attente ou en retard → RETRAIT_COTISATIONS_EN_ATTENTE,"
+            + " rien n'est enregistré")
+    void totalAvecCotisationsEnAttente() {
+      when(cotisationRepository.countByMembre_IdAndStatutInAndDeletedAtIsNull(
+              membreBinta.getId(),
+              List.of(CotisationStatut.EN_ATTENTE, CotisationStatut.EN_RETARD)))
+          .thenReturn(2L);
+
+      assertThatThrownBy(
+              () ->
+                  service.enregistrer(
+                      kc, tontine.getId(), saisie(membreBinta, NatureRetrait.TOTAL, null, null)))
+          .isInstanceOf(BadRequestException.class)
+          .satisfies(
+              e -> {
+                CustomException ce = (CustomException) e;
+                assertThat(ce.getCode()).isEqualTo(ErrorCode.RETRAIT_COTISATIONS_EN_ATTENTE);
+                assertThat(ce.getDetails()).containsEntry("cotisationsEnAttente", 2L);
+              });
+      verify(retraitRepository, never()).save(any());
+      assertThat(membreBinta.getSoldeLe()).isNull();
+    }
+
+    @Test
+    @DisplayName("retrait partiel malgré des cotisations en attente : accepté (aucun contrôle)")
+    void partielAvecCotisationsEnAttente() throws Exception {
+      assertThat(
+              service
+                  .enregistrer(
+                      kc, tontine.getId(), saisie(membreAwa, NatureRetrait.PARTIEL, "1000", null))
+                  .getStatut())
+          .isEqualTo(StatutRetrait.REMIS);
+      verify(cotisationRepository, never())
+          .countByMembre_IdAndStatutInAndDeletedAtIsNull(any(), any());
     }
 
     @Test

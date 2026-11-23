@@ -354,6 +354,39 @@ class RetraitsEpargneIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
+      "retrait total refusé tant qu'une cotisation attend sa validation"
+          + " (RETRAIT_COTISATIONS_EN_ATTENTE), accepté une fois validée")
+  void totalBloqueParCotisationEnAttente() {
+    Utilisateur g = donnees.inscrire("Gestionnaire");
+    Utilisateur awa = donnees.inscrire("Awa");
+    String tid = epargne(g, "Épargne en attente", 10, null);
+    String awaId = donnees.ajouterMembre(g.jeton(), tid, awa.phone()).path("id").asText();
+    donnees.activer(g.jeton(), tid);
+    String cotisationId =
+        TestDataFactory.attendre(
+                api.post(
+                    tontine(tid) + "/cotisations",
+                    awa.jeton(),
+                    Map.of("cycleId", cycle(g, tid, 1), "montant", 5000)),
+                201)
+            .data()
+            .path("id")
+            .asText();
+
+    Reponse bloque = retirer(g, tid, retrait(awaId, "TOTAL", null, null));
+    assertThat(bloque.statut()).isEqualTo(400);
+    assertThat(bloque.code()).isEqualTo("RETRAIT_COTISATIONS_EN_ATTENTE");
+    assertThat(bloque.data().path("cotisationsEnAttente").asInt()).isEqualTo(1);
+
+    TestDataFactory.attendre(
+        api.put(tontine(tid) + "/cotisations/" + cotisationId + "/valider", g.jeton(), null), 200);
+    JsonNode total =
+        TestDataFactory.attendre(retirer(g, tid, retrait(awaId, "TOTAL", null, null)), 201).data();
+    assertThat(total.path("montant").asInt()).isEqualTo(5000);
+  }
+
+  @Test
+  @DisplayName(
       "commission de 10 % au prorata de ce qui est distribué : le membre soldé n'en paie pas")
   void commissionAuProrata() {
     Utilisateur g = donnees.inscrire("Gestionnaire");

@@ -218,7 +218,12 @@ public enum ErrorCode {
    * Retraits indisponibles sur cette tontine (B42) : rotative, pas encore active, terminée ou déjà
    * distribuée.
    */
-  RETRAIT_NON_DISPONIBLE;
+  RETRAIT_NON_DISPONIBLE,
+  /**
+   * Retrait total refusé tant que le membre a des cotisations EN_ATTENTE ou EN_RETARD (B42) : les
+   * valider ou les refuser d'abord ; {@code data.cotisationsEnAttente}.
+   */
+  RETRAIT_COTISATIONS_EN_ATTENTE;
 
   /** Code générique correspondant à un statut HTTP (repli quand aucun code métier n'est fourni). */
   public static ErrorCode fromStatus(HttpStatusCode status) {

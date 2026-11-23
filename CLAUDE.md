@@ -129,7 +129,7 @@
 
 | Endpoint | Méthode | USER | MEMBER | ADMIN | SUPER_ADMIN | Notes |
 |----------|---------|------|--------|-------|-------------|-------|
-| `/retraits/admin` | POST | ❌ | ❌ | ✅² | ✅ | 🔒 retrait déjà remis → `REMIS` ; événementielle ACTIVE/SUSPENDUE non distribuée (`RETRAIT_NON_DISPONIBLE`), règle `LIBRE` (`RETRAIT_INTERDIT`) ; `PARTIEL` ≤ solde (`RETRAIT_SOLDE_INSUFFISANT`, `data.solde`) ; `TOTAL` = tout le solde → membre soldé (`soldeLe`, `MEMBRE_SOLDE` ensuite) ; `dateRemise` passée permise (≥ début de la tontine) ; `RETRAIT_REMIS` sauf report de plus de 24 h |
+| `/retraits/admin` | POST | ❌ | ❌ | ✅² | ✅ | 🔒 retrait déjà remis → `REMIS` ; événementielle ACTIVE/SUSPENDUE non distribuée (`RETRAIT_NON_DISPONIBLE`), règle `LIBRE` (`RETRAIT_INTERDIT`) ; `PARTIEL` ≤ solde (`RETRAIT_SOLDE_INSUFFISANT`, `data.solde`) ; `TOTAL` = tout le solde → membre soldé (`soldeLe`, `MEMBRE_SOLDE` ensuite), refusé tant que des cotisations EN_ATTENTE/EN_RETARD restent (`RETRAIT_COTISATIONS_EN_ATTENTE`) ; `dateRemise` passée permise (≥ début de la tontine) ; `RETRAIT_REMIS` sauf report de plus de 24 h |
 | `/retraits` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 `?membreId=&statut=` (multi) ; ¹les siens seulement ; tri `dateRemise` DESC |
 | `/retraits/export` | GET | ❌ | ❌ | ✅² | ✅ | 🔒 CSV de tous les retraits |
 | `/retraits/{retraitId}` | DELETE | ❌ | ❌ | ✅² | ✅ | 🔒 corps `{motif}` obligatoire → `ANNULE` ; total annulé = membre plus soldé ; `RETRAIT_NON_ANNULABLE` (déjà annulé, distribution faite, partiel d'un membre soldé) |
