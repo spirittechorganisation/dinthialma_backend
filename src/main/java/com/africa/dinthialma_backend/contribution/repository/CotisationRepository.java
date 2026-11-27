@@ -1,6 +1,7 @@
 package com.africa.dinthialma_backend.contribution.repository;
 
 import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
+import com.africa.dinthialma_backend.contribution.codeList.OrigineCotisation;
 import com.africa.dinthialma_backend.contribution.entity.Cotisation;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -104,9 +105,13 @@ public interface CotisationRepository
       "SELECT c.membre.id, c.cycle.id, COUNT(c) FROM Cotisation c"
           + " WHERE c.membre.id IN :membreIds"
           + "   AND c.statut = com.africa.dinthialma_backend.contribution.codeList.CotisationStatut.VALIDE"
-          + "   AND c.deletedAt IS NULL"
+          + "   AND c.deletedAt IS NULL AND c.cycle.numeroCycle > 0"
           + " GROUP BY c.membre.id, c.cycle.id")
   List<Object[]> countValideByMembreAndCycle(@Param("membreIds") List<UUID> membreIds);
+
+  /** Cotisations actives d'une tontine selon leur origine (soldes de départ repris, B41). */
+  List<Cotisation> findByTontine_IdAndOrigineAndDeletedAtIsNull(
+      UUID tontineId, OrigineCotisation origine);
 
   /** Cotisations d'une échéance (rappels et cotisations manquantes, B32). */
   List<Cotisation> findByEcheance_IdAndDeletedAtIsNull(UUID echeanceId);

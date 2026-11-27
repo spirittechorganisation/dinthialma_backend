@@ -135,6 +135,14 @@
 | `/retraits/{retraitId}` | DELETE | ❌ | ❌ | ✅² | ✅ | 🔒 corps `{motif}` obligatoire → `ANNULE` ; total annulé = membre plus soldé ; `RETRAIT_NON_ANNULABLE` (déjà annulé, distribution faite, partiel d'un membre soldé) |
 | `/membres/{membreId}/solde` | GET | ❌ | ✅¹ (le sien) | ✅² | ✅ | 🔒 `totalCotiseValide`, `totalRetire`, `solde`, `soldeLe` |
 
+### 📒 Reprise d'une tontine commencée (`/v1/tontines/{tontineId}/reprise`, B41 lot 1)
+
+| Endpoint | Méthode | USER | MEMBER | ADMIN | SUPER_ADMIN | Notes |
+|----------|---------|------|--------|-------|-------------|-------|
+| `/` | GET | ❌ | ✅¹ (le sien + total) | ✅² | ✅ | 🔒 `statut` AUCUNE \| OUVERTE \| FIGEE, `dateDebutReelle`, `figeeLe`, `cycleId` (tour n° 0), `total`, `soldes[]` |
+| `/` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 `{dateDebutReelle, soldes:[{membreId, montant, note}]}` remplace l'ensemble (créé / modifié / retiré, audité, aucune notification) ; événementielle non terminée (`REPRISE_NON_AUTORISEE`), pas figée (`REPRISE_FIGEE`), cahier avant `dateDebut` sans limite (`REPRISE_DATE_INVALIDE`), francs entiers |
+| `/figer` | POST | ❌ | ❌ | ✅² | ✅ | 🔒 plus modifiable, `SOLDE_DEPART` à chaque membre (in-app + WhatsApp `JACKPOT`) ; sans effet si déjà figée ; gel automatique au premier retrait et à la distribution finale |
+
 ### 🙏 Priorités de jackpot (`/v1/tontines/{tontineId}/priorites`)
 
 | Endpoint | Méthode | USER | MEMBER | ADMIN | SUPER_ADMIN | Notes |
@@ -284,16 +292,16 @@ src/main/java/com/africa/dinthialma_backend/
 │       ├── interfaces/ MembreService
 │       └── impl/       MembreServiceImpl
 ├── contribution/   ✅ Complet (entités + repo + service + controller)
-│   ├── codeList/       CotisationStatut
-│   ├── controller/     CotisationController
+│   ├── codeList/       CotisationStatut, Ponctualite, OrigineCotisation, StatutReprise
+│   ├── controller/     CotisationController, RepriseController (B41)
 │   ├── dto/            RecordCotisationRequest, CotisationResponse
 │   ├── entity/         Cotisation
 │   ├── repository/     CotisationRepository
 │   └── service/
-│       ├── interfaces/ CotisationService, SuiviTourService
-│       └── impl/       CotisationServiceImpl, SuiviTourServiceImpl
+│       ├── interfaces/ CotisationService, SuiviTourService, RepriseService
+│       └── impl/       CotisationServiceImpl, SuiviTourServiceImpl, RepriseServiceImpl
 ├── notification/   ✅ SMS (LAfricaMobile) + notifications in-app
-│   ├── codeList/       NotificationType (28 valeurs)
+│   ├── codeList/       NotificationType (29 valeurs)
 │   ├── controller/     NotificationController
 │   ├── dto/            NotificationResponse
 │   ├── entity/         UserNotification
@@ -608,7 +616,9 @@ obligatoire** : sans Docker démarré, le build échoue (les `*IT` ne sont jamai
 | V046 | `sessions_appareil_confiance.sql` | B53 : `user_sessions.appareil_id` (unique par utilisateur), `confiance` |
 | V047 | `ouverture_tours_remise_automatique.sql` | B33 lot 3 : `tontines.ouverture_tours` (reprise A_LA_REMISE), `remise_automatique` (reprise false) ; `cycles_tontine.remise_auto_signalee_at` ; index (statut, date_debut) et (statut, echeance_at) |
 
-Prochaine version disponible : **V048**
+| V048 | `reprise_tontine_commencee.sql` | B41 : `tontines.date_debut_reelle`, `reprise_figee_le` ; `cotisations.origine` (reprise DECLARATION si enregistrée par le membre, sinon SAISIE ; NOT NULL) |
+
+Prochaine version disponible : **V049**
 
 ---
 
@@ -760,7 +770,7 @@ Prochaine version disponible : **V048**
 | Marquer tout lu (bulk `@Modifying`) | ✅ | 🔒 tout auth |
 | `notify()` non-bloquant (try/catch interne, jamais de rollback) | ✅ | INFRA |
 
-#### Mapping événements → `NotificationType` (28 valeurs)
+#### Mapping événements → `NotificationType` (29 valeurs)
 
 | Événement | Type | Destinataire |
 |-----------|------|--------------|
@@ -794,6 +804,7 @@ Prochaine version disponible : **V048**
 | Retrait d'épargne remis (B42), sauf report de plus de 24 h | `RETRAIT_REMIS` | Membre concerné (in-app + WhatsApp `JACKPOT`) |
 | Tour rotatif ouvert à sa date (`A_LA_DATE`, B33 lot 3) | `CYCLE_OUVERT` | Membres actifs |
 | Remise automatique impossible à l'échéance (option par défaut inapplicable, B33 lot 3), une fois par tour | `REMISE_AUTO_IMPOSSIBLE` | Gestionnaire |
+| Reprise figée : solde de départ repris du cahier (B41) | `SOLDE_DEPART` | Chaque membre ayant un solde (in-app + WhatsApp `JACKPOT`) |
 
 ---
 
@@ -1010,7 +1021,8 @@ WhatsApp passe par une méthode de `WhatsappService` rattachée à une famille (
   B43–B48 correctifs (distribution de tous les membres, dates, récaps avec SORTI)          ✅
   B51 répartition finale relisible (GET /distribution, cycle, clôture forcée)              ✅
   B42 lot 1 retraits saisis par le gestionnaire, solde, membre soldé, distribution (V044)  ✅
-  B42 lots 2–3 (demande du membre, règles délai/frais), B41 reprise                        🔲
+  B41 lot 1 reprise : soldes de départ, tour n° 0, gel, SOLDE_DEPART (V048)               ✅
+  B42 lots 2–3 (demande du membre, règles délai/frais), B41 lots 2–3 (activité, import)   🔲
 ```
 
 ---
@@ -1238,6 +1250,30 @@ Calcul `computeFinalDistribution()` :
 Réponse : `CycleResponse.distributionParMembre` (liste `MembreDistributionInfo` : montantCotise, montantCommission, montantNet).
 
 Notifications WhatsApp : un message individuel par membre + résumé admin.
+
+---
+
+## Reprise d'une tontine déjà commencée (B41, lot 1)
+
+Décisions du 2026-11-27. Le gestionnaire qui tenait sa tontine sur un cahier reporte le **solde de départ** de
+chaque membre (`RepriseService`, `PUT /v1/tontines/{id}/reprise`).
+
+- **Événementielles seulement** au lot 1 (rotative → `REPRISE_NON_AUTORISEE` : il faudrait aussi reprendre les
+  jackpots déjà reçus). Tontine non terminée, en BROUILLON comme en cours.
+- **Tour de reprise** : `cycles_tontine` n° 0, TERMINE, sans échéance, du `dateDebutReelle` à la veille de
+  `dateDebut` (suivi si `dateDebut` change en BROUILLON). Il n'empêche pas la génération des tours à
+  l'activation (`existsByTontine_IdAndNumeroCycleGreaterThan…(id, 0)`) ; il n'est pas compté dans les tours
+  générés / payés de `/me/summary` ; aucun paiement dessus (`TOUR_DE_REPRISE`).
+- **Soldes** : cotisations VALIDE, `origine = REPRISE` (`OrigineCotisation` : DECLARATION, SAISIE, REPRISE,
+  V048), `Ponctualite.REPRISE` : comptées dans le solde (B42), les récapitulatifs et la distribution finale ;
+  jamais en rappel ni en retard (tour TERMINE). Date du cahier : antérieure à `dateDebut`, **sans limite**.
+- **Gel** (`reprise_figee_le`) : manuel (`POST /reprise/figer`) ou automatique quand l'argent sort, au premier
+  retrait (`RetraitEpargneServiceImpl`) ou à la distribution finale (`CycleServiceImpl`) ; ensuite
+  `REPRISE_FIGEE`. Au gel, chaque membre reçoit son solde (`SOLDE_DEPART`, in-app + WhatsApp famille
+  `JACKPOT`, active par défaut) pour pouvoir le contester. Aucune notification à la saisie.
+- Retraits (B42) : `dateRemise` acceptée depuis `dateDebutReelle`.
+- **Reste (lots 2–3)** : type `REPRISE` dans `/me/activite`, colonne `Origine` dans l'export CSV,
+  `soldeReprise` dans `/me/summary`, import détaillé membre × jour.
 
 ---
 

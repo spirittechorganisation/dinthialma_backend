@@ -7,6 +7,7 @@ import com.africa.dinthialma_backend.contribution.codeList.Ponctualite;
 import com.africa.dinthialma_backend.contribution.dto.CotisationResponse;
 import com.africa.dinthialma_backend.contribution.dto.CycleRecapCotisationResponse;
 import com.africa.dinthialma_backend.contribution.dto.MembreTotalCotisationResponse;
+import com.africa.dinthialma_backend.contribution.dto.RepriseResponse;
 import com.africa.dinthialma_backend.contribution.entity.Cotisation;
 import com.africa.dinthialma_backend.member.entity.TontineMembre;
 import com.africa.dinthialma_backend.tontine.calendrier.EcheancesTour;
@@ -33,6 +34,16 @@ public interface CotisationMapper {
   @Mapping(target = "echeanceAt", source = "echeance.echeanceAt")
   @Mapping(target = "ponctualite", expression = "java(Ponctualite.de(cotisation))")
   CotisationResponse toResponse(Cotisation cotisation);
+
+  /** Solde de départ repris du cahier (B41). */
+  @Mapping(target = "cotisationId", source = "id")
+  @Mapping(target = "membreId", source = "membre.id")
+  @Mapping(target = "firstName", source = "membre.user.firstName")
+  @Mapping(target = "lastName", source = "membre.user.lastName")
+  @Mapping(target = "phone", source = "membre.user.phone")
+  @Mapping(target = "accountStatus", source = "membre.user.accountStatus")
+  @Mapping(target = "statutMembre", source = "membre.statut")
+  RepriseResponse.SoldeDepart toSoldeDepart(Cotisation cotisation);
 
   /** Échéance (heure de Dakar) avec son décalage horaire. */
   default OffsetDateTime versOffset(LocalDateTime dateHeure) {

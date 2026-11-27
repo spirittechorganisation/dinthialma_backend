@@ -1,6 +1,7 @@
 package com.africa.dinthialma_backend.contribution.dto;
 
 import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
+import com.africa.dinthialma_backend.contribution.codeList.OrigineCotisation;
 import com.africa.dinthialma_backend.contribution.codeList.Ponctualite;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
@@ -94,8 +95,15 @@ public class CotisationResponse {
       description =
           "Ponctualité : payée avant l'échéance du tour ou non (distincte du statut, dont"
               + " EN_RETARD signifie « non validée à la clôture »)",
-      allowableValues = {"A_TEMPS", "EN_RETARD", "NON_DECLAREE"})
+      allowableValues = {"A_TEMPS", "EN_RETARD", "NON_DECLAREE", "REPRISE"})
   private Ponctualite ponctualite;
+
+  @Schema(
+      description =
+          "Origine : DECLARATION (membre), SAISIE (gestionnaire) ou REPRISE (solde de départ du"
+              + " cahier, tour n° 0, B41)",
+      example = "DECLARATION")
+  private OrigineCotisation origine;
 
   @Schema(description = "Date de dernière modification")
   private LocalDateTime updatedAt;

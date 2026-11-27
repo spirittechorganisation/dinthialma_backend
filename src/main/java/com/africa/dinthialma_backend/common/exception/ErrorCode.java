@@ -235,7 +235,15 @@ public enum ErrorCode {
    */
   RETRAIT_COTISATIONS_EN_ATTENTE,
   /** Remise automatique à l'échéance demandée sur une tontine événementielle (B33, lot 3). */
-  REMISE_AUTOMATIQUE_NON_DISPONIBLE;
+  REMISE_AUTOMATIQUE_NON_DISPONIBLE,
+  /** Reprise réservée aux tontines événementielles non terminées (B41, lot 1). */
+  REPRISE_NON_AUTORISEE,
+  /** Reprise figée : soldes de départ plus modifiables (B41). */
+  REPRISE_FIGEE,
+  /** Date de début du cahier pas antérieure à la date de début de la tontine (B41). */
+  REPRISE_DATE_INVALIDE,
+  /** Paiement sur le tour de reprise (n° 0) : il ne reçoit que les soldes de départ (B41). */
+  TOUR_DE_REPRISE;
 
   /** Code générique correspondant à un statut HTTP (repli quand aucun code métier n'est fourni). */
   public static ErrorCode fromStatus(HttpStatusCode status) {

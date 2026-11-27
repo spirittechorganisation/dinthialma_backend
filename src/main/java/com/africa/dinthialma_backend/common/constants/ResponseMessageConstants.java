@@ -176,6 +176,9 @@ public final class ResponseMessageConstants {
   public static final String RETRAIT_LIST_SUCCESS = "Retraits récupérés avec succès";
   public static final String RETRAIT_CANCELLED = "Retrait annulé";
   public static final String RETRAIT_NOT_FOUND = "Retrait introuvable";
+  public static final String REPRISE_SUCCESS = "Reprise récupérée avec succès";
+  public static final String REPRISE_UPDATED = "Soldes de départ enregistrés";
+  public static final String REPRISE_FIGEE = "Reprise figée";
   public static final String SOLDE_SUCCESS = "Solde récupéré avec succès";
   public static final String ORDRE_BENEFICIAIRE_UPDATED = "Ordre des bénéficiaires mis à jour";
   public static final String ME_GESTION_COTISATIONS_SUCCESS =

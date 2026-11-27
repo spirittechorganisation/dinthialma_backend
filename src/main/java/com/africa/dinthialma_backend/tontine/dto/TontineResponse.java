@@ -92,6 +92,18 @@ public class TontineResponse {
       example = "false")
   private boolean remiseAutomatique;
 
+  @Schema(
+      description =
+          "Date de début du cahier quand la tontine a commencé avant l'application (B41) ; null"
+              + " sinon",
+      example = "2026-11-01")
+  private LocalDate dateDebutReelle;
+
+  @Schema(
+      description = "Reprise figée : soldes de départ plus modifiables (B41)",
+      example = "false")
+  private boolean repriseFigee;
+
   @Schema(description = "Code de l'ordre des bénéficiaires (ROTATIVE uniquement)", example = "FIXE")
   private String ordreBeneficiaire;
 

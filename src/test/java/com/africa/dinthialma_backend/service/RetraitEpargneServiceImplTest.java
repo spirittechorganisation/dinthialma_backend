@@ -22,6 +22,7 @@ import com.africa.dinthialma_backend.common.security.AccessControl;
 import com.africa.dinthialma_backend.common.util.FichierExport;
 import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
+import com.africa.dinthialma_backend.contribution.service.interfaces.RepriseService;
 import com.africa.dinthialma_backend.epargne.codeList.NatureRetrait;
 import com.africa.dinthialma_backend.epargne.codeList.OrigineRetrait;
 import com.africa.dinthialma_backend.epargne.codeList.StatutRetrait;
@@ -89,6 +90,7 @@ class RetraitEpargneServiceImplTest {
   @Mock private AuditService auditService;
   @Mock private NotificationService notificationService;
   @Mock private WhatsappService whatsappService;
+  @Mock private RepriseService repriseService;
 
   @Spy private Clock horloge = Clock.fixed(MAINTENANT.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
 
@@ -367,6 +369,35 @@ class RetraitEpargneServiceImplTest {
                       NatureRetrait.PARTIEL,
                       "1000",
                       LocalDate.of(2026, 11, 24).atTime(23, 59))),
+          ErrorCode.INVALID_PARAMETER);
+    }
+
+    @Test
+    @DisplayName(
+        "B41 : reprise d'un cahier -> retrait daté depuis le début du cahier accepté, reprise"
+            + " figée au premier retrait")
+    void depuisLeCahier() throws Exception {
+      tontine.setDateDebutReelle(LocalDate.of(2026, 11, 1));
+      LocalDateTime pendantLeCahier = LocalDate.of(2026, 11, 10).atTime(9, 0);
+
+      RetraitEpargneResponse r =
+          service.enregistrer(
+              kc,
+              tontine.getId(),
+              saisie(membreAwa, NatureRetrait.PARTIEL, "1000", pendantLeCahier));
+
+      assertThat(r.getDateRemise()).isEqualTo(pendantLeCahier);
+      verify(repriseService).figerSiOuverte(gestionnaire, tontine);
+      code(
+          () ->
+              service.enregistrer(
+                  kc,
+                  tontine.getId(),
+                  saisie(
+                      membreAwa,
+                      NatureRetrait.PARTIEL,
+                      "1000",
+                      LocalDate.of(2026, 10, 31).atTime(23, 59))),
           ErrorCode.INVALID_PARAMETER);
     }
 
