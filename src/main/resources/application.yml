@@ -28,6 +28,15 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
 
+  # ─── Tâches planifiées ───────────────────────────────────────────
+  # Par défaut, Spring n'a qu'un fil pour tous les @Scheduled : un rappel lent (WhatsApp à 8h)
+  # retarderait l'ouverture des tours et la remise automatique (B33). Un fil par tâche planifiée.
+  task:
+    scheduling:
+      pool:
+        size: ${SCHEDULING_POOL_SIZE:4}
+      thread-name-prefix: planifie-
+
   # ─── Multipart (upload fichiers) ─────────────────────────────────
   servlet:
     multipart:

@@ -115,10 +115,11 @@ public class QrServiceImpl implements QrService {
 
   private QrResolutionResponse.MembreDansMaTontine situation(TontineMembre m) {
     Tontine t = m.getTontine();
-    CycleTontine enCours =
-        cycleRepository
-            .findByTontine_IdAndStatutAndDeletedAtIsNull(t.getId(), CycleStatut.EN_COURS)
-            .orElse(null);
+    // Plusieurs tours peuvent être ouverts (B33, lot 3) : le tour en cours est le plus récent
+    List<CycleTontine> ouverts =
+        cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
+            t.getId(), CycleStatut.EN_COURS);
+    CycleTontine enCours = ouverts.isEmpty() ? null : ouverts.get(ouverts.size() - 1);
     return QrResolutionResponse.MembreDansMaTontine.builder()
         .tontineId(t.getId())
         .tontineNom(t.getNom())

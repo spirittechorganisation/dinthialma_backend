@@ -97,12 +97,12 @@ class QrServiceImplTest {
             .findByUser_IdAndDeletedAtIsNullAndTontine_DeletedAtIsNullOrderByCreatedAtDesc(
                 scanne.getId()))
         .thenReturn(List.of(m1, m2, m3));
-    when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+    when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
             maTontine.getId(), CycleStatut.EN_COURS))
-        .thenReturn(Optional.of(tour));
-    when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+        .thenReturn(List.of(tour));
+    when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
             maTontineSansTour.getId(), CycleStatut.EN_COURS))
-        .thenReturn(Optional.empty());
+        .thenReturn(List.of());
     when(suiviTour.aPayeEcheanceCourante(tour, m1.getId())).thenReturn(true);
 
     QrResolutionResponse r = service.resoudre(moi.getKeycloakId(), "m_abc");

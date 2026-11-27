@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.Getter;
@@ -167,8 +168,17 @@ public class MyDashboardResponse {
         example = "240000")
     private BigDecimal montantTotalValide;
 
-    @Schema(description = "Cycle actuellement EN_COURS – null si aucun")
+    @Schema(
+        description =
+            "Tour en cours : le plus récent des tours EN_COURS (plusieurs quand les tours"
+                + " s'ouvrent à leur date, B33) – null si aucun")
     private CycleEnCoursInfo cycleEnCours;
+
+    @Schema(
+        description =
+            "Tours précédents encore ouverts, pas encore remis (ouverture A_LA_DATE, B33), par"
+                + " numéro croissant ; vide sinon")
+    private List<TourARemettre> toursARemettre;
 
     @Schema(
         description =
@@ -187,6 +197,21 @@ public class MyDashboardResponse {
             "Demandes de priorité sur le jackpot EN_ATTENTE (à accepter ou refuser). 0 si aucune.",
         example = "0")
     private long prioritesEnAttente;
+  }
+
+  @Schema(description = "Tour ouvert, pas encore remis, qui précède le tour en cours (B33)")
+  @Getter
+  @Builder
+  public static class TourARemettre {
+
+    @Schema(description = "UUID du tour")
+    private UUID cycleId;
+
+    @Schema(description = "Numéro du tour", example = "3")
+    private int numeroCycle;
+
+    @Schema(description = "Dernier jour du tour", example = "2026-12-06")
+    private LocalDate dateFin;
   }
 
   @Schema(description = "Informations résumées du cycle EN_COURS d'une tontine")

@@ -394,11 +394,24 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             tid, CotisationStatut.EN_RETARD);
     var montantValide = cotisationRepository.sumMontantValideByTontine(tid);
 
+    // Tours ouverts à leur date (B33, lot 3) : le tour en cours est le plus récent, les précédents
+    // ouverts restent à remettre
+    List<CycleTontine> ouverts =
+        cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
+            tid, CycleStatut.EN_COURS);
     MyDashboardResponse.CycleEnCoursInfo cycleInfo =
-        cycleRepository
-            .findByTontine_IdAndStatutAndDeletedAtIsNull(tid, CycleStatut.EN_COURS)
-            .map(this::cycleEnCoursInfo)
-            .orElse(null);
+        ouverts.isEmpty() ? null : cycleEnCoursInfo(ouverts.get(ouverts.size() - 1));
+    List<MyDashboardResponse.TourARemettre> toursARemettre =
+        ouverts.stream()
+            .limit(Math.max(0, ouverts.size() - 1L))
+            .map(
+                c ->
+                    MyDashboardResponse.TourARemettre.builder()
+                        .cycleId(c.getId())
+                        .numeroCycle(c.getNumeroCycle())
+                        .dateFin(c.getDateFin())
+                        .build())
+            .toList();
 
     boolean evenementielle = tontine.getTontineType() == TontineType.EVENEMENTIELLE;
     boolean gagnantsADesigner =
@@ -430,6 +443,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         .cotisationsEnRetard(enRetard)
         .montantTotalValide(montantValide)
         .cycleEnCours(cycleInfo)
+        .toursARemettre(toursARemettre)
         .gagnantsADesigner(gagnantsADesigner)
         .demandesEnAttente(
             demandeRepository.countByTontine_IdAndStatutAndDeletedAtIsNull(

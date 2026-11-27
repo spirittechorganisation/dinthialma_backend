@@ -184,7 +184,12 @@ public class MeServiceImpl implements MeService {
         cycleRepository
             .findByTontine_IdInAndStatutAndDeletedAtIsNull(tontineIds, CycleStatut.EN_COURS)
             .stream()
-            .collect(Collectors.toMap(c -> c.getTontine().getId(), c -> c, (a, b) -> a));
+            // Plusieurs tours ouverts (B33, lot 3) : le tour en cours est le plus récent
+            .collect(
+                Collectors.toMap(
+                    c -> c.getTontine().getId(),
+                    c -> c,
+                    (a, b) -> a.getNumeroCycle() >= b.getNumeroCycle() ? a : b));
 
     return new AgregatsSummary(
         statsParMembre,

@@ -3,6 +3,7 @@ package com.africa.dinthialma_backend.tontine.dto;
 import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
 import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
+import com.africa.dinthialma_backend.tontine.codeList.OuvertureTours;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -125,6 +126,22 @@ public class CreateTontineRequest {
               + " AVANCE_COMMISSION ou AVANCE_GESTIONNAIRE ; modifiable à chaque remise",
       example = "DISPONIBLE")
   private ModeRemise modeRemise;
+
+  @Schema(
+      description =
+          "Ouverture des tours (B33) : A_LA_DATE (défaut) = chaque tour s'ouvre à sa date, remis"
+              + " ou non ; A_LA_REMISE = le tour suivant s'ouvre à la remise du précédent."
+              + " Modifiable à tout moment (PATCH /reglages)",
+      example = "A_LA_DATE")
+  private OuvertureTours ouvertureTours;
+
+  @Schema(
+      description =
+          "Remise automatique du jackpot à l'échéance du tour (B33, ROTATIVE), avec l'option de"
+              + " remise par défaut ; défaut false (le gestionnaire remet lui-même). Modifiable à"
+              + " tout moment (PATCH /reglages)",
+      example = "false")
+  private Boolean remiseAutomatique;
 
   @Schema(
       description =
