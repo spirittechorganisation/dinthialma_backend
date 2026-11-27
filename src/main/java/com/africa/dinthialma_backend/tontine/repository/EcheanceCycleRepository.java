@@ -48,14 +48,19 @@ public interface EcheanceCycleRepository extends JpaRepository<EcheanceCycle, UU
   List<Object[]> countByCycleForTontines(@Param("tontineIds") List<UUID> tontineIds);
 
   /**
-   * Échéances à régulariser (B33) : échéances des tours TERMINE de tontines rotatives sur
-   * lesquelles un membership n'a aucune cotisation active (hors REFUSE). Chaque ligne : {@code
-   * [échéance (EcheanceCycle), tour (CycleTontine), membreId (UUID)]}, par tour puis par échéance.
+   * Échéances à régulariser (B33) : échéances des tours TERMINE de tontines rotatives, et des tours
+   * EN_COURS dépassés par un tour plus récent ouvert à sa date (lot 3), sur lesquelles un
+   * membership n'a aucune cotisation active (hors REFUSE). Chaque ligne : {@code [échéance
+   * (EcheanceCycle), tour (CycleTontine), membreId (UUID)]}, par tour puis par échéance.
    */
   @Query(
       "SELECT e, c, m.id FROM EcheanceCycle e JOIN e.cycle c, TontineMembre m"
           + " WHERE m.id IN :membreIds AND c.tontine = m.tontine"
-          + "   AND c.statut = com.africa.dinthialma_backend.tontine.codeList.CycleStatut.TERMINE"
+          + "   AND (c.statut = com.africa.dinthialma_backend.tontine.codeList.CycleStatut.TERMINE"
+          + "     OR (c.statut = com.africa.dinthialma_backend.tontine.codeList.CycleStatut.EN_COURS"
+          + "       AND EXISTS (SELECT 1 FROM CycleTontine c2 WHERE c2.tontine = c.tontine"
+          + "         AND c2.statut = com.africa.dinthialma_backend.tontine.codeList.CycleStatut.EN_COURS"
+          + "         AND c2.numeroCycle > c.numeroCycle AND c2.deletedAt IS NULL)))"
           + "   AND c.tontine.tontineType ="
           + "       com.africa.dinthialma_backend.tontine.codeList.TontineType.ROTATIVE"
           + "   AND c.deletedAt IS NULL AND e.deletedAt IS NULL"

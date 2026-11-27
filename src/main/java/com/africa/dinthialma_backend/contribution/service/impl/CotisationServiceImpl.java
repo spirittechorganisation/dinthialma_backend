@@ -338,9 +338,11 @@ public class CotisationServiceImpl implements CotisationService {
       log.warn("Notif WA admin (admin-record) non envoyée : {}", e.getMessage());
     }
 
-    // Après les notifications : remise si tous ont payé (B32, TOUS_PAYES) ; sur un tour déjà
-    // remis, la régularisation complète les bénéficiaires ou rembourse l'avance (B33)
+    // Après les notifications : remise si tous ont payé (B32, TOUS_PAYES) ou si la remise
+    // automatique attendait cette cotisation (B33 lot 3) ; sur un tour déjà remis, la
+    // régularisation complète les bénéficiaires ou rembourse l'avance (B33)
     cycleService.remettreSiTousPayes(keycloakId, tontineId, cycle.getId());
+    cycleService.retenterRemiseAutomatique(tontineId, cycle.getId());
     remiseService.regulariser(cycle);
 
     return cotisationMapper.toResponse(saved);
@@ -454,9 +456,11 @@ public class CotisationServiceImpl implements CotisationService {
       log.warn("Notif WA admin (validation) non envoyée : {}", e.getMessage());
     }
 
-    // Après les notifications : remise si tous ont payé (B32, TOUS_PAYES) ; sur un tour déjà
-    // remis, la régularisation complète les bénéficiaires ou rembourse l'avance (B33)
+    // Après les notifications : remise si tous ont payé (B32, TOUS_PAYES) ou si la remise
+    // automatique attendait cette cotisation (B33 lot 3) ; sur un tour déjà remis, la
+    // régularisation complète les bénéficiaires ou rembourse l'avance (B33)
     cycleService.remettreSiTousPayes(keycloakId, tontineId, saved.getCycle().getId());
+    cycleService.retenterRemiseAutomatique(tontineId, saved.getCycle().getId());
     remiseService.regulariser(saved.getCycle());
 
     return cotisationMapper.toResponse(saved);

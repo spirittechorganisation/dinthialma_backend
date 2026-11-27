@@ -46,6 +46,7 @@ import com.africa.dinthialma_backend.tontine.codeList.CycleStatut;
 import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
 import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
+import com.africa.dinthialma_backend.tontine.codeList.OuvertureTours;
 import com.africa.dinthialma_backend.tontine.codeList.StatutEcheance;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
@@ -245,9 +246,9 @@ class CycleServiceImplTest {
     @DisplayName("numéro suivant, EN_COURS, audité, chaque membre actif notifié (CYCLE_OUVERT)")
     void succes() throws Exception {
       membresActifs(3);
-      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
               tontine.getId(), CycleStatut.EN_COURS))
-          .thenReturn(Optional.empty());
+          .thenReturn(List.of());
       when(cycleRepository.findTopByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleDesc(
               tontine.getId()))
           .thenReturn(Optional.of(Fixtures.cycle(tontine, 4, CycleStatut.TERMINE)));
@@ -273,9 +274,9 @@ class CycleServiceImplTest {
     @DisplayName("premier cycle numéroté 1")
     void premier() throws Exception {
       membresActifs(0);
-      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
               tontine.getId(), CycleStatut.EN_COURS))
-          .thenReturn(Optional.empty());
+          .thenReturn(List.of());
       when(cycleRepository.findTopByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleDesc(
               tontine.getId()))
           .thenReturn(Optional.empty());
@@ -291,9 +292,9 @@ class CycleServiceImplTest {
     void dateFinCalculee() throws Exception {
       membresActifs(0);
       tontine.appliquerRythme(new Rythme(1, UniteRythme.SEMAINE, "DIMANCHE", LocalTime.of(20, 0)));
-      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
               tontine.getId(), CycleStatut.EN_COURS))
-          .thenReturn(Optional.empty());
+          .thenReturn(List.of());
       CycleTontine precedent = Fixtures.cycle(tontine, 1, CycleStatut.TERMINE);
       precedent.setDateFin(LocalDate.of(2026, 11, 15));
       when(cycleRepository.findTopByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleDesc(
@@ -317,9 +318,9 @@ class CycleServiceImplTest {
       membresActifs(0);
       tontine.appliquerRythme(new Rythme(1, UniteRythme.SEMAINE, "DIMANCHE", LocalTime.of(20, 0)));
       tontine.setCotisationsParTour(4);
-      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
               tontine.getId(), CycleStatut.EN_COURS))
-          .thenReturn(Optional.empty());
+          .thenReturn(List.of());
       when(cycleRepository.findTopByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleDesc(
               tontine.getId()))
           .thenReturn(Optional.empty());
@@ -372,9 +373,9 @@ class CycleServiceImplTest {
         "refus : cycle déjà en cours (CYCLE_ALREADY_IN_PROGRESS), dates inversées, statut, mode, type, tiers")
     void refus() {
       OpenCycleRequest ok = req(LocalDate.now(), LocalDate.now().plusDays(1));
-      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
               tontine.getId(), CycleStatut.EN_COURS))
-          .thenReturn(Optional.of(Fixtures.cycle(tontine, 1, CycleStatut.EN_COURS)));
+          .thenReturn(List.of(Fixtures.cycle(tontine, 1, CycleStatut.EN_COURS)));
       assertThatThrownBy(() -> service.openCycle(kc, tontine.getId(), ok))
           .isInstanceOfSatisfying(
               BadRequestException.class,
@@ -1892,6 +1893,293 @@ class CycleServiceImplTest {
       assertThat(r.getDistributionParMembre().get(0).getMontantRetire()).isEqualByComparingTo("0");
       assertThat(r.getDistributionParMembre().get(0).getMontantNet()).isEqualByComparingTo("8000");
       assertThat(r.getMontantNet()).isEqualByComparingTo("8000");
+    }
+  }
+
+  @Nested
+  @DisplayName("B33 lot 3 : tours ouverts à leur date")
+  class OuvertureALaDate {
+
+    private final LocalDate aujourdHui = LocalDate.now();
+
+    private CycleTontine tour(int numero, CycleStatut statut, LocalDate debut) {
+      CycleTontine c = Fixtures.cycle(tontine, numero, statut);
+      c.setDateDebut(debut);
+      c.setDateFin(debut);
+      return c;
+    }
+
+    private void verrouillee() {
+      when(tontineRepository.verrouiller(tontine.getId())).thenReturn(Optional.of(tontine));
+    }
+
+    @Test
+    @DisplayName(
+        "rotative : le tour arrivé s'ouvre, le précédent non remis reste ouvert, membres notifiés")
+    void rotative() {
+      tontine.setOuvertureTours(OuvertureTours.A_LA_DATE);
+      tontine.setModeCycle(ModeCycle.AUTOMATIQUE);
+      verrouillee();
+      membresActifs(2);
+      CycleTontine t1 = tour(1, CycleStatut.EN_COURS, aujourdHui.minusDays(30));
+      CycleTontine t2 = tour(2, CycleStatut.EN_ATTENTE, aujourdHui);
+      CycleTontine t3 = tour(3, CycleStatut.EN_ATTENTE, aujourdHui.plusDays(30));
+      when(cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId()))
+          .thenReturn(List.of(t1, t2, t3));
+
+      assertThat(service.ouvrirToursArrives(tontine.getId(), aujourdHui)).isEqualTo(1);
+
+      assertThat(t1.getStatut()).isEqualTo(CycleStatut.EN_COURS);
+      assertThat(t2.getStatut()).isEqualTo(CycleStatut.EN_COURS);
+      assertThat(t3.getStatut()).isEqualTo(CycleStatut.EN_ATTENTE);
+      verify(notificationService, times(2))
+          .notify(any(), eq(NotificationType.CYCLE_OUVERT), anyString(), anyString(), any(), any());
+      verify(auditService)
+          .log(gestionnaire, "cycles_tontine", t2.getId(), "statut", "EN_ATTENTE", "EN_COURS");
+    }
+
+    @Test
+    @DisplayName(
+        "événementielle : bascule, sous-cycles précédents clôturés (même sautés), jamais la"
+            + " distribution finale, aucune notification")
+    void evenementielle() {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      tontine.setOuvertureTours(OuvertureTours.A_LA_DATE);
+      verrouillee();
+      CycleTontine s1 = tour(1, CycleStatut.TERMINE, aujourdHui.minusDays(3));
+      CycleTontine s2 = tour(2, CycleStatut.EN_COURS, aujourdHui.minusDays(2));
+      CycleTontine s3 = tour(3, CycleStatut.EN_ATTENTE, aujourdHui.minusDays(1));
+      CycleTontine s4 = tour(4, CycleStatut.EN_ATTENTE, aujourdHui);
+      CycleTontine s5 = tour(5, CycleStatut.EN_ATTENTE, aujourdHui.plusDays(1));
+      when(cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId()))
+          .thenReturn(List.of(s1, s2, s3, s4, s5));
+
+      assertThat(service.ouvrirToursArrives(tontine.getId(), aujourdHui)).isEqualTo(2);
+
+      assertThat(s2.getStatut()).isEqualTo(CycleStatut.TERMINE);
+      assertThat(s3.getStatut()).isEqualTo(CycleStatut.TERMINE);
+      assertThat(s4.getStatut()).isEqualTo(CycleStatut.EN_COURS);
+      assertThat(s5.getStatut()).isEqualTo(CycleStatut.EN_ATTENTE);
+      verify(distributionRepository, never()).saveAll(any());
+      verify(notificationService, never())
+          .notify(any(), any(), anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("dernier sous-cycle arrivé déjà ouvert (clôture manuelle) : seulement ouvert")
+    void evenementielleCibleDejaOuverte() {
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      tontine.setOuvertureTours(OuvertureTours.A_LA_DATE);
+      verrouillee();
+      CycleTontine s1 = tour(1, CycleStatut.TERMINE, aujourdHui.minusDays(1));
+      CycleTontine s2 = tour(2, CycleStatut.EN_ATTENTE, aujourdHui);
+      when(cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId()))
+          .thenReturn(List.of(s1, s2));
+
+      assertThat(service.ouvrirToursArrives(tontine.getId(), aujourdHui)).isEqualTo(1);
+      assertThat(s2.getStatut()).isEqualTo(CycleStatut.EN_COURS);
+    }
+
+    @Test
+    @DisplayName("sans effet : tontine introuvable, A_LA_REMISE, suspendue, aucun tour arrivé")
+    void sansEffet() {
+      when(tontineRepository.verrouiller(tontine.getId()))
+          .thenReturn(Optional.empty(), Optional.of(tontine));
+      assertThat(service.ouvrirToursArrives(tontine.getId(), aujourdHui)).isZero();
+      assertThat(service.ouvrirToursArrives(tontine.getId(), aujourdHui)).isZero();
+
+      tontine.setOuvertureTours(OuvertureTours.A_LA_DATE);
+      tontine.setStatut(TontineStatut.SUSPENDUE);
+      assertThat(service.ouvrirToursArrives(tontine.getId(), aujourdHui)).isZero();
+
+      tontine.setStatut(TontineStatut.ACTIVE);
+      when(cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontine.getId()))
+          .thenReturn(
+              List.of(
+                  tour(1, CycleStatut.EN_COURS, aujourdHui),
+                  tour(2, CycleStatut.EN_ATTENTE, aujourdHui.plusDays(1))));
+      assertThat(service.ouvrirToursArrives(tontine.getId(), aujourdHui)).isZero();
+      verify(cycleRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName(
+        "ouverture manuelle en A_LA_DATE : possible sans remettre le tour en cours, pas sur sa"
+            + " période")
+    void ouvertureManuelle() throws Exception {
+      tontine.setOuvertureTours(OuvertureTours.A_LA_DATE);
+      membresActifs(0);
+      CycleTontine enCours = Fixtures.cycle(tontine, 1, CycleStatut.EN_COURS);
+      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
+              tontine.getId(), CycleStatut.EN_COURS))
+          .thenReturn(List.of(enCours));
+      when(cycleRepository.findTopByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleDesc(
+              tontine.getId()))
+          .thenReturn(Optional.of(enCours));
+
+      OpenCycleRequest chevauche = new OpenCycleRequest();
+      chevauche.setDateDebut(enCours.getDateFin());
+      assertThatThrownBy(() -> service.openCycle(kc, tontine.getId(), chevauche))
+          .isInstanceOfSatisfying(
+              BadRequestException.class,
+              e -> assertThat(e.getCode()).isEqualTo(ErrorCode.CYCLE_ALREADY_IN_PROGRESS));
+
+      OpenCycleRequest apres = new OpenCycleRequest();
+      apres.setDateDebut(enCours.getDateFin().plusDays(1));
+      CycleResponse r = service.openCycle(kc, tontine.getId(), apres);
+      assertThat(r.getNumeroCycle()).isEqualTo(2);
+      assertThat(r.getStatut()).isEqualTo(CycleStatut.EN_COURS);
+      assertThat(enCours.getStatut()).isEqualTo(CycleStatut.EN_COURS);
+    }
+  }
+
+  @Nested
+  @DisplayName("B33 lot 3 : remise automatique à l'échéance")
+  class RemiseAutomatique {
+
+    private final LocalDateTime maintenant = LocalDateTime.now();
+    private CycleTontine tour;
+
+    @BeforeEach
+    void preparer() {
+      tontine.setRemiseAutomatique(true);
+      lenient()
+          .when(tontineRepository.verrouiller(tontine.getId()))
+          .thenReturn(Optional.of(tontine));
+      tour = cycleConnu(1, CycleStatut.EN_COURS);
+      tour.setEcheanceAt(maintenant.minusHours(1));
+    }
+
+    private void collecte(String montant, String prevu) {
+      List<TontineMembre> membres = membresActifs(2);
+      when(cotisationRepository.findByCycle_IdAndStatutAndDeletedAtIsNull(
+              tour.getId(), CotisationStatut.VALIDE))
+          .thenReturn(List.of(cotisation(membres.get(0), tour, CotisationStatut.VALIDE, montant)));
+      when(suiviTour.etat(tour))
+          .thenReturn(new EtatTour(2, 1, new BigDecimal(prevu), false, null, null, 0, 0));
+    }
+
+    @Test
+    @DisplayName("échéance passée : remis avec l'option par défaut, gagnant désigné")
+    void remis() {
+      collecte("1000", "2000");
+
+      assertThat(service.remettreAEcheance(tontine.getId(), tour.getId(), maintenant)).isTrue();
+
+      assertThat(tour.getStatut()).isEqualTo(CycleStatut.TERMINE);
+      assertThat(tour.getModeRemise()).isEqualTo(ModeRemise.DISPONIBLE);
+      assertThat(tour.getMontantNet()).isEqualByComparingTo("1000");
+      verify(gagnantRepository).save(any());
+      verify(notificationService, never())
+          .notify(
+              any(),
+              eq(NotificationType.REMISE_AUTO_IMPOSSIBLE),
+              anyString(),
+              anyString(),
+              any(),
+              any());
+    }
+
+    @Test
+    @DisplayName("ATTENDRE avec un manque : rien n'est remis, gestionnaire prévenu une seule fois")
+    void attendre() {
+      tontine.setModeRemise(ModeRemise.ATTENDRE);
+      collecte("1000", "2000");
+
+      assertThat(service.remettreAEcheance(tontine.getId(), tour.getId(), maintenant)).isFalse();
+      assertThat(
+              service.remettreAEcheance(tontine.getId(), tour.getId(), maintenant.plusMinutes(5)))
+          .isFalse();
+
+      assertThat(tour.getStatut()).isEqualTo(CycleStatut.EN_COURS);
+      assertThat(tour.getRemiseAutoSignaleeAt()).isEqualTo(maintenant);
+      verify(notificationService, times(1))
+          .notify(
+              eq(gestionnaire.getId()),
+              eq(NotificationType.REMISE_AUTO_IMPOSSIBLE),
+              anyString(),
+              contains("il manque 1000 FCFA"),
+              eq(tontine.getId()),
+              any());
+    }
+
+    @Test
+    @DisplayName("AVANCE_COMMISSION sans commission suffisante : le gestionnaire remet lui-même")
+    void avanceCommission() {
+      tontine.setModeRemise(ModeRemise.AVANCE_COMMISSION);
+      collecte("1000", "2000");
+
+      assertThat(service.remettreAEcheance(tontine.getId(), tour.getId(), maintenant)).isFalse();
+
+      verify(notificationService)
+          .notify(
+              any(),
+              eq(NotificationType.REMISE_AUTO_IMPOSSIBLE),
+              anyString(),
+              contains("AVANCE_COMMISSION"),
+              any(),
+              any());
+    }
+
+    @Test
+    @DisplayName(
+        "nouvel essai après une cotisation validée : seulement si la remise a été jugée"
+            + " impossible ; remis dès que l'option s'applique")
+    void nouvelEssai() {
+      tour.setEcheanceAt(LocalDateTime.now().minusDays(1));
+      assertThat(service.retenterRemiseAutomatique(tontine.getId(), tour.getId())).isFalse();
+      verify(tontineRepository, never()).verrouiller(any());
+
+      UUID inconnu = UUID.randomUUID();
+      when(cycleRepository.findByIdAndTontine_IdAndDeletedAtIsNull(inconnu, tontine.getId()))
+          .thenReturn(Optional.empty());
+      assertThat(service.retenterRemiseAutomatique(tontine.getId(), inconnu)).isFalse();
+
+      tour.setRemiseAutoSignaleeAt(LocalDateTime.now().minusHours(2));
+      collecte("2000", "2000");
+      tontine.setModeRemise(ModeRemise.ATTENDRE);
+      assertThat(service.retenterRemiseAutomatique(tontine.getId(), tour.getId())).isTrue();
+      assertThat(tour.getStatut()).isEqualTo(CycleStatut.TERMINE);
+
+      assertThat(service.retenterRemiseAutomatique(tontine.getId(), tour.getId())).isFalse();
+    }
+
+    @Test
+    @DisplayName(
+        "sans effet : tontine ou tour introuvable, réglage désactivé, échéance à venir ou absente,"
+            + " tour non EN_COURS, tontine suspendue ou événementielle")
+    void sansEffet() {
+      UUID id = tontine.getId();
+      when(tontineRepository.verrouiller(id))
+          .thenReturn(Optional.empty())
+          .thenReturn(Optional.of(tontine));
+      assertThat(service.remettreAEcheance(id, tour.getId(), maintenant)).isFalse();
+
+      UUID inconnu = UUID.randomUUID();
+      when(cycleRepository.findByIdAndTontine_IdAndDeletedAtIsNull(inconnu, id))
+          .thenReturn(Optional.empty());
+      assertThat(service.remettreAEcheance(id, inconnu, maintenant)).isFalse();
+
+      tour.setEcheanceAt(maintenant.plusMinutes(1));
+      assertThat(service.remettreAEcheance(id, tour.getId(), maintenant)).isFalse();
+      tour.setEcheanceAt(null);
+      assertThat(service.remettreAEcheance(id, tour.getId(), maintenant)).isFalse();
+      tour.setEcheanceAt(maintenant);
+      tour.setStatut(CycleStatut.TERMINE);
+      assertThat(service.remettreAEcheance(id, tour.getId(), maintenant)).isFalse();
+      tour.setStatut(CycleStatut.EN_COURS);
+      tontine.setRemiseAutomatique(false);
+      assertThat(service.remettreAEcheance(id, tour.getId(), maintenant)).isFalse();
+      tontine.setRemiseAutomatique(true);
+      tontine.setStatut(TontineStatut.SUSPENDUE);
+      assertThat(service.remettreAEcheance(id, tour.getId(), maintenant)).isFalse();
+      tontine.setStatut(TontineStatut.ACTIVE);
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      assertThat(service.remettreAEcheance(id, tour.getId(), maintenant)).isFalse();
+
+      verify(cycleRepository, never()).save(any());
+      verify(notificationService, never())
+          .notify(any(), any(), anyString(), anyString(), any(), any());
     }
   }
 }

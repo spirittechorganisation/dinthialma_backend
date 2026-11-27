@@ -85,7 +85,7 @@
 | `/{id}/suspendre` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 ACTIVE → SUSPENDUE |
 | `/{id}/cloturer` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 ACTIVE/SUSPENDUE → TERMINEE (B33), irréversible ; points en suspens (tours non remis, gagnants à désigner, retards, compléments, paiements à valider) → 409 `TONTINE_CLOTURE_A_CONFIRMER` avec le détail dans `data`, puis corps `forcer: true` ; BROUILLON ou déjà TERMINEE → 400 `TONTINE_NON_CLOTURABLE` ; membres actifs notifiés (`TONTINE_CLOTUREE`) |
 | `/{id}/ordre-beneficiaire` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 ROTATIVE BROUILLON/ACTIVE/SUSPENDUE ; effet à la prochaine clôture ; vers ROTATION/ALEATOIRE refusé si un tour attend ses gagnants (409 `DESIGNATION_EN_ATTENTE`) ; membres actifs notifiés (`ORDRE_BENEFICIAIRE_MODIFIE`) |
-| `/{id}/reglages` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 réglages modifiables à tout moment, tontine non TERMINEE : `regleRetrait` (B42, événementielle seulement, sinon `RETRAIT_NON_DISPONIBLE`) ; `modeRemise` (rotative seulement) (option de remise par défaut, effet aux prochaines remises ; `CAISSE` → 400 `MODE_REMISE_INDISPONIBLE`) ; audité |
+| `/{id}/reglages` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 réglages modifiables à tout moment, tontine non TERMINEE : `regleRetrait` (B42, événementielle seulement, sinon `RETRAIT_NON_DISPONIBLE`) ; `modeRemise` (rotative seulement) (option de remise par défaut, effet aux prochaines remises ; `CAISSE` → 400 `MODE_REMISE_INDISPONIBLE`) ; `ouvertureTours` `A_LA_DATE`/`A_LA_REMISE` (B33 lot 3) ; `remiseAutomatique` (rotative seulement, sinon `REMISE_AUTOMATIQUE_NON_DISPONIBLE`) ; audité |
 | `/{id}/distribution` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 répartition finale ÉVÉNEMENTIELLE relue (B51) : lignes (`montantCotise`, `montantCommission`, `montantRetire`, `montantNet`, `statutMembre`) + totaux + `dateDistribution` ; ¹membre : sa ligne seulement ; rotative → 400 ; pas encore distribuée → 404 `DISTRIBUTION_NON_FAITE` |
 | `/{id}/echeance` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 jour / heure d'échéance et rappels (B26), tontine non TERMINEE ; tours pas encore commencés replanifiés, tour en cours inchangé ; membres actifs notifiés (`REGLES_MODIFIEES`) |
 
@@ -120,7 +120,7 @@
 | `/{cycleId}` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 B32 : `montantJackpotPrevu` (brut du tour complet ; tour remis depuis B33 : celui retenu à la remise), `tousPayes` (tour EN_COURS) ; B33 : `modeRemise`, `resteARecevoir`, `montantAvance` (tour remis) |
 | `/beneficiaires` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 historique des cycles TERMINE avec gagnants (pageable, tri numeroCycle ASC) |
 | `/proposition` | GET | ❌ | ❌ | ✅² | ✅ | 🔒 ROTATIVE MANUEL : tour proposé selon le rythme et `cotisationsParTour` (`?dateDebut=`, défaut aujourd'hui) : `dateFin`, `nombreEcheances`, `echeances` ; sans effet en base (B32) |
-| `/` | POST | ❌ | ❌ | ✅² | ✅ | 🔒 mode MANUEL uniquement ; `dateFin` facultative (absente = les N échéances du rythme ; choisie = échéances jusqu'à cette date, la dernière ramenée dessus ; reliquat de moins d'une demi-période fusionné dans l'échéance précédente, B26/B32) |
+| `/` | POST | ❌ | ❌ | ✅² | ✅ | 🔒 mode MANUEL uniquement ; un autre tour EN_COURS → `CYCLE_ALREADY_IN_PROGRESS` en `A_LA_REMISE`, en `A_LA_DATE` seulement si `dateDebut` ≤ fin du dernier tour EN_COURS (B33 lot 3) ; `dateFin` facultative (absente = les N échéances du rythme ; choisie = échéances jusqu'à cette date, la dernière ramenée dessus ; reliquat de moins d'une demi-période fusionné dans l'échéance précédente, B26/B32) |
 | `/{cycleId}/remise/apercu` | GET | ❌ | ❌ | ✅² | ✅ | 🔒 aperçu avant remise (B33), tour EN_COURS d'une ROTATIVE, sans effet en base : `jackpotPrevu`, `collecte`, `manquant`, `retardataires[]`, `options[]` (une par `modeRemise` : `possible`, `montantNet`, `montantBeneficiaire`, `commission`, `avanceGestionnaire`, `resteARecevoir`, `montantARecuperer`) |
 | `/{cycleId}/cloturer` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 EN_COURS → TERMINE, calcul jackpot + commissions ; B33 : corps facultatif `modeRemise` (défaut = réglage de la tontine) ; `ATTENDRE` avec un manque → 409 `REMISE_JACKPOT_INCOMPLETE` ; `CAISSE`, ou `AVANCE_COMMISSION` que la commission ne couvre pas → 400 `MODE_REMISE_INDISPONIBLE` |
 | `/{cycleId}/beneficiaire` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 ordreBeneficiaire MANUEL ou HYBRIDE + cycle TERMINE sans gagnant ; `membreIds` vide = tirage aléatoire de `nombreGagnants` (priorités accordées servies d'abord) ; refuse doublons, membres non ACTIF et membres `aRecuJackpot` |
@@ -169,7 +169,7 @@
 | `/dashboard/users/{id}/enable` | POST | ❌ | ✅ | Réactiver un compte |
 | `/dashboard/users/{id}/roles` | PUT | ❌ | ✅ | Modifier les rôles |
 | `/dashboard/contributions` | GET | ❌ | ✅ | Toutes cotisations (pageable, filtres cumulables `?statut=` `?tontineId=`) |
-| `/my-dashboard` | GET | ✅ | ✅ | Métriques de l'admin pour ses tontines (`tontines` = `PagedModel`) + agrégats globaux : `nombreTontinesGerees`, `montantTotalValide`, `totalMembres`, `totalCotisationsEnAttente/EnRetard`, `totalDemandesEnAttente`, `totalCollecteToursEnCours`, `totalAttenduToursEnCours` ; par tontine : `gagnantsADesigner`, `demandesEnAttente`, `prioritesEnAttente` + `cycleEnCours` (`montantCollecte`, `montantEnAttente`, `montantAttendu` = `montantJackpotPrevu` sur le tour complet, `tousPayes`, `nombreEcheances`, `numeroEcheanceCourante`, `membresAyantPaye` / `membresEnAttente` sur l'échéance courante, `membresActifs`) (B32) |
+| `/my-dashboard` | GET | ✅ | ✅ | Métriques de l'admin pour ses tontines (`tontines` = `PagedModel`) + agrégats globaux : `nombreTontinesGerees`, `montantTotalValide`, `totalMembres`, `totalCotisationsEnAttente/EnRetard`, `totalDemandesEnAttente`, `totalCollecteToursEnCours`, `totalAttenduToursEnCours` ; par tontine : `gagnantsADesigner`, `demandesEnAttente`, `prioritesEnAttente`, `toursARemettre` (tours EN_COURS antérieurs au tour en cours, B33 lot 3) + `cycleEnCours` (le plus récent des tours EN_COURS ; `montantCollecte`, `montantEnAttente`, `montantAttendu` = `montantJackpotPrevu` sur le tour complet, `tousPayes`, `nombreEcheances`, `numeroEcheanceCourante`, `membresAyantPaye` / `membresEnAttente` sur l'échéance courante, `membresActifs`) (B32) |
 
 ### 🙋 Mon espace (`/v1/me`)
 
@@ -270,9 +270,10 @@ src/main/java/com/africa/dinthialma_backend/
 │   ├── repository/     TontineRepository, CycleTontineRepository,
 │   │                   TontineCommissionRepository
 │   └── service/
-│       ├── interfaces/ TontineService, CycleService, CommissionService, ClotureTontineService
+│       ├── interfaces/ TontineService, CycleService, CommissionService, ClotureTontineService,
+│       │               ToursPlanifiesService
 │       └── impl/       TontineServiceImpl, CycleServiceImpl, CommissionServiceImpl,
-│                       ClotureTontineServiceImpl
+│                       ClotureTontineServiceImpl, ToursPlanifiesServiceImpl (planifié, B33 lot 3)
 ├── member/         ✅ Complet (entités + repo + service + controller)
 │   ├── codeList/       MembreStatut
 │   ├── controller/     MembreController
@@ -292,7 +293,7 @@ src/main/java/com/africa/dinthialma_backend/
 │       ├── interfaces/ CotisationService, SuiviTourService
 │       └── impl/       CotisationServiceImpl, SuiviTourServiceImpl
 ├── notification/   ✅ SMS (LAfricaMobile) + notifications in-app
-│   ├── codeList/       NotificationType (27 valeurs)
+│   ├── codeList/       NotificationType (28 valeurs)
 │   ├── controller/     NotificationController
 │   ├── dto/            NotificationResponse
 │   ├── entity/         UserNotification
@@ -605,8 +606,9 @@ obligatoire** : sans Docker démarré, le build échoue (les `*IT` ne sont jamai
 
 | V045 | `securite_pin_otp.sql` | SE07 : `users.pin_echecs_cumules`, `otp_verifications.tentatives`, `phone_change_requests.tentatives`, table `envois_otp` |
 | V046 | `sessions_appareil_confiance.sql` | B53 : `user_sessions.appareil_id` (unique par utilisateur), `confiance` |
+| V047 | `ouverture_tours_remise_automatique.sql` | B33 lot 3 : `tontines.ouverture_tours` (reprise A_LA_REMISE), `remise_automatique` (reprise false) ; `cycles_tontine.remise_auto_signalee_at` ; index (statut, date_debut) et (statut, echeance_at) |
 
-Prochaine version disponible : **V047**
+Prochaine version disponible : **V048**
 
 ---
 
@@ -690,6 +692,8 @@ Prochaine version disponible : **V047**
 | Liste cycles | ✅ | 🔒 membres + créateur + SUPER_ADMIN |
 | Détail cycle | ✅ | 🔒 membres + créateur + SUPER_ADMIN |
 | Ouvrir cycle (ROTATIVE MANUEL uniquement) | ✅ | 🔒 créateur + SUPER_ADMIN |
+| Tours ouverts à leur date (`A_LA_DATE`, B33 lot 3) | ✅ | AUTO toutes les 5 min |
+| Remise automatique à l'échéance (réglage, ROTATIVE) | ✅ | AUTO toutes les 5 min |
 | Clôturer cycle (ROTATIVE) | ✅ | 🔒 créateur + SUPER_ADMIN |
 | Désigner les gagnants (MANUEL / HYBRIDE : tirage ou choix) | ✅ | 🔒 créateur + SUPER_ADMIN |
 | Changer l'ordre des bénéficiaires en cours de tontine | ✅ | 🔒 créateur + SUPER_ADMIN |
@@ -756,7 +760,7 @@ Prochaine version disponible : **V047**
 | Marquer tout lu (bulk `@Modifying`) | ✅ | 🔒 tout auth |
 | `notify()` non-bloquant (try/catch interne, jamais de rollback) | ✅ | INFRA |
 
-#### Mapping événements → `NotificationType` (27 valeurs)
+#### Mapping événements → `NotificationType` (28 valeurs)
 
 | Événement | Type | Destinataire |
 |-----------|------|--------------|
@@ -788,6 +792,8 @@ Prochaine version disponible : **V047**
 | Dernier tour remis, ou distribution finale faite : la tontine peut être clôturée (B33) | `TONTINE_PRETE_A_CLOTURER` | Gestionnaire |
 | Tontine clôturée par son gestionnaire (B33) | `TONTINE_CLOTUREE` | Membres actifs (sauf celui qui clôture) |
 | Retrait d'épargne remis (B42), sauf report de plus de 24 h | `RETRAIT_REMIS` | Membre concerné (in-app + WhatsApp `JACKPOT`) |
+| Tour rotatif ouvert à sa date (`A_LA_DATE`, B33 lot 3) | `CYCLE_OUVERT` | Membres actifs |
+| Remise automatique impossible à l'échéance (option par défaut inapplicable, B33 lot 3), une fois par tour | `REMISE_AUTO_IMPOSSIBLE` | Gestionnaire |
 
 ---
 
@@ -838,6 +844,7 @@ cd docker && docker compose up -d
 | `BOOTSTRAP_SUPER_ADMIN_PHONE` | `221783703310` | Sans le `+` |
 | `TOKEN_ENCRYPTION_KEY` | *(dev default)* | Clé AES-256 pour refresh tokens |
 | `OPENWA_CATEGORIES` | `OTP,INVITATION,JACKPOT` | Familles de messages WhatsApp réellement envoyées (voir ci-dessous) |
+| `SCHEDULING_POOL_SIZE` | `4` | Fils des tâches planifiées (`@Scheduled`) : une tâche lente ne retarde pas les autres |
 
 ### Familles de messages WhatsApp (`CategorieWhatsapp`)
 
@@ -997,7 +1004,7 @@ WhatsApp passe par une méthode de `WhatsappService` rattachée à une famille (
       lot 1 : régularisation (tour TERMINE payable, EN_RETARD validable, echeancesARegulariser)  ✅
       lot 2 : options de remise (modeRemise V043, aperçu, compléments, PATCH /reglages)    ✅
       lot 4 : clôture de la tontine (PUT /cloturer, TONTINE_PRETE_A_CLOTURER)              ✅
-      lot 3 : tours ouverts à leur date (ouvertureTours), remise automatique à l'échéance  🔲
+      lot 3 : tours ouverts à leur date (ouvertureTours), remise automatique à l'échéance (V047) ✅
 
 ✦ Correctifs et épargne déjà commencée (2026-11-21 → 23)
   B43–B48 correctifs (distribution de tous les membres, dates, récaps avec SORTI)          ✅
@@ -1131,8 +1138,28 @@ défaut) et remise automatique à l'échéance (réglage, désactivé par défau
   gagnants, `Montants.repartir` ; `JACKPOT_DISTRIBUE` à chacun, `COMPLEMENT_A_REMETTRE` au gestionnaire) ;
   le reste rembourse l'avance du gestionnaire, puis sa commission. Tour sans gagnant désigné : seul le net
   du tour est mis à jour (partagé à la désignation). Montants de suivi : Dinthialma ne détient aucun fonds.
-- `PATCH /v1/tontines/{id}/reglages` : `modeRemise` modifiable à tout moment (accord 2026-11-15), effet aux
-  prochaines remises ; `remise automatique à l'échéance` et `ouvertureTours` s'y ajouteront au lot 3.
+- `PATCH /v1/tontines/{id}/reglages` : `modeRemise`, `ouvertureTours` et `remiseAutomatique` modifiables à tout
+  moment (accord 2026-11-15, confirmé 2026-11-27 : « le gestionnaire règle selon ses préférences »), effet aux
+  prochains tours / prochaines remises.
+- **Lot 3 — tours ouverts à leur date et remise automatique** (`ToursPlanifiesService`, toutes les 5 min,
+  `zone = Africa/Dakar`, décisions du 2026-11-27) :
+  - `ouvertureTours` (V047) : existantes `A_LA_REMISE` (tour suivant ouvert à la remise, historique) ;
+    nouvelles `A_LA_DATE` par défaut : chaque tour EN_ATTENTE s'ouvre à sa `dateDebut`, remis ou non le
+    précédent (la remise ouvre toujours aussi le suivant) ; plusieurs tours EN_COURS possibles en rotative,
+    `CYCLE_OUVERT` aux membres actifs. Retour à `A_LA_REMISE` : les tours déjà ouverts le restent.
+  - **Événementielle `A_LA_DATE`** : le sous-cycle arrivé s'ouvre et les précédents (même sautés) sont
+    clôturés, sans notification ; un seul sous-cycle EN_COURS ; jamais la distribution finale (manuelle).
+  - **« Tour en cours »** = le plus récent des tours EN_COURS (`/me/summary`, `my-dashboard`, QR) ; les
+    précédents : `toursARemettre` (`my-dashboard`) et leurs échéances impayées dans `echeancesARegulariser`.
+  - `MANUEL` + `A_LA_DATE` : `POST /cycles` sans remettre le tour en cours, `dateDebut` après sa fin.
+  - `remiseAutomatique` (rotative, défaut false) : tour EN_COURS d'une tontine ACTIVE dont `echeanceAt` est
+    passé → remis avec `modeRemise` de la tontine (`CycleService.remettreAEcheance`) ; option inapplicable
+    (ATTENDRE incomplet, commission insuffisante) : rien n'est remis, `REMISE_AUTO_IMPOSSIBLE` au gestionnaire
+    une fois par tour (`remise_auto_signalee_at`). Nouvel essai à chaque cotisation validée ou saisie
+    (`CycleService.retenterRemiseAutomatique`, même transaction) et, en filet, au passage de l'heure pleine
+    (réglage, membres, commission modifiés) : pas de recalcul toutes les 5 min. Audit au nom du gestionnaire.
+  - **Concurrence** : `TontineRepository.verrouiller` (`SELECT … FOR UPDATE`) au début de toute remise
+    (`closeCycle`, remise automatique) et de l'ouverture : une seule à la fois par tontine, entre instances.
 - **Lot 4 — clôture de la tontine** (`ClotureTontineService`, `PUT /v1/tontines/{id}/cloturer`, décisions du
   2026-11-16) : le gestionnaire clôture (ACTIVE ou SUSPENDUE → TERMINEE, irréversible) ; l'app ne clôture
   jamais seule.

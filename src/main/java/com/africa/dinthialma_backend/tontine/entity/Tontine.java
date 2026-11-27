@@ -7,6 +7,7 @@ import com.africa.dinthialma_backend.tontine.calendrier.Rythme;
 import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
 import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
+import com.africa.dinthialma_backend.tontine.codeList.OuvertureTours;
 import com.africa.dinthialma_backend.tontine.codeList.RegleRetrait;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
@@ -184,6 +185,23 @@ public class Tontine extends BaseEntity {
   @Enumerated(EnumType.STRING)
   @Column(name = "regle_retrait", nullable = false, length = 20)
   private RegleRetrait regleRetrait;
+
+  /**
+   * Ouverture des tours (B33, lot 3) : A_LA_DATE pour une nouvelle tontine, A_LA_REMISE pour les
+   * tontines antérieures à V047.
+   */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "ouverture_tours", nullable = false, length = 20)
+  private OuvertureTours ouvertureTours;
+
+  /** Remise du jackpot à l'échéance du tour avec l'option par défaut (B33, lot 3, rotatives). */
+  @Column(name = "remise_automatique", nullable = false)
+  private boolean remiseAutomatique;
+
+  /** Ouverture des tours ; A_LA_REMISE (fonctionnement historique) si non renseignée. */
+  public OuvertureTours getOuvertureToursEffectif() {
+    return ouvertureTours != null ? ouvertureTours : OuvertureTours.A_LA_REMISE;
+  }
 
   /** Règle de retrait ; INTERDIT si non renseignée. */
   public RegleRetrait getRegleRetraitEffectif() {
