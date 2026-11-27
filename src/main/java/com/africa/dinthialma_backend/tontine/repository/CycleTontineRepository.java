@@ -28,6 +28,14 @@ public interface CycleTontineRepository extends JpaRepository<CycleTontine, UUID
   /** Cycle par id dans le contexte d'une tontine. */
   Optional<CycleTontine> findByIdAndTontine_IdAndDeletedAtIsNull(UUID id, UUID tontineId);
 
+  /** Tour d'un numéro donné (tour de reprise n° 0, B41). */
+  Optional<CycleTontine> findByTontine_IdAndNumeroCycleAndDeletedAtIsNull(
+      UUID tontineId, int numeroCycle);
+
+  /** Vrai si la tontine a des tours au-delà d'un numéro (tours générés, hors reprise n° 0). */
+  boolean existsByTontine_IdAndNumeroCycleGreaterThanAndDeletedAtIsNull(
+      UUID tontineId, int numeroCycle);
+
   /** Vérifie si des cycles existent pour une tontine (utile avant regénération). */
   boolean existsByTontine_IdAndDeletedAtIsNull(UUID tontineId);
 
@@ -85,10 +93,13 @@ public interface CycleTontineRepository extends JpaRepository<CycleTontine, UUID
   List<CycleTontine> findByTontine_IdInAndStatutAndDeletedAtIsNull(
       Collection<UUID> tontineIds, CycleStatut statut);
 
-  /** Nombre de cycles par tontine. Chaque ligne : {@code [tontineId (UUID), nombre (Long)]}. */
+  /**
+   * Nombre de cycles par tontine, hors tour de reprise (B41). Chaque ligne : {@code [tontineId
+   * (UUID), nombre (Long)]}.
+   */
   @Query(
       "SELECT c.tontine.id, COUNT(c) FROM CycleTontine c"
-          + " WHERE c.tontine.id IN :tontineIds AND c.deletedAt IS NULL"
+          + " WHERE c.tontine.id IN :tontineIds AND c.deletedAt IS NULL AND c.numeroCycle > 0"
           + " GROUP BY c.tontine.id")
   List<Object[]> countByTontineIds(@Param("tontineIds") Collection<UUID> tontineIds);
 

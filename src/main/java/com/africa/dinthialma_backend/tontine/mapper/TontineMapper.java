@@ -24,6 +24,7 @@ public interface TontineMapper {
   @Mapping(target = "distributionParMembre", ignore = true)
   @Mapping(target = "rappels", source = "tontine", qualifiedByName = "rappels")
   @Mapping(target = "ouvertureTours", source = "tontine.ouvertureToursEffectif")
+  @Mapping(target = "repriseFigee", expression = "java(tontine.getRepriseFigeeLe() != null)")
   TontineResponse toResponse(Tontine tontine, int nombreMembresActuels);
 
   /** Rappels avant échéance de la tontine (B26). */

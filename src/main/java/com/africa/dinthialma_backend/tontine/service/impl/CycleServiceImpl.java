@@ -19,6 +19,7 @@ import com.africa.dinthialma_backend.contribution.codeList.Ponctualite;
 import com.africa.dinthialma_backend.contribution.dto.EtatTour;
 import com.africa.dinthialma_backend.contribution.entity.Cotisation;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
+import com.africa.dinthialma_backend.contribution.service.interfaces.RepriseService;
 import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
 import com.africa.dinthialma_backend.epargne.calcul.SoldeEpargne;
 import com.africa.dinthialma_backend.epargne.repository.RetraitEpargneRepository;
@@ -108,6 +109,7 @@ public class CycleServiceImpl implements CycleService {
   private final PrioriteJackpotService prioriteService;
   private final SuiviTourService suiviTour;
   private final RetraitEpargneRepository retraitRepository;
+  private final RepriseService repriseService;
 
   // ─── Lecture ─────────────────────────────────────────────────────────────
 
@@ -851,6 +853,8 @@ public class CycleServiceImpl implements CycleService {
     List<MembreDistributionInfo> distribution;
 
     if (isLastCycle) {
+      // L'argent sort : les soldes de départ repris du cahier ne bougent plus (B41)
+      repriseService.figerSiOuverte(caller, tontine);
       // Clôture finale : calcul de la distribution totale par membre
       List<TontineCommission> commissions =
           commissionRepository.findByTontine_IdAndDeletedAtIsNull(tontineId);

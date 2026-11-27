@@ -3,6 +3,7 @@ package com.africa.dinthialma_backend.contribution.entity;
 import com.africa.dinthialma_backend.auth.entity.User;
 import com.africa.dinthialma_backend.common.base.BaseEntity;
 import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
+import com.africa.dinthialma_backend.contribution.codeList.OrigineCotisation;
 import com.africa.dinthialma_backend.member.entity.TontineMembre;
 import com.africa.dinthialma_backend.tontine.entity.CycleTontine;
 import com.africa.dinthialma_backend.tontine.entity.EcheanceCycle;
@@ -118,6 +119,11 @@ public class Cotisation extends BaseEntity {
   /** Paiement remis en main propre au gestionnaire : date réelle du paiement (ponctualité). */
   @Column(name = "date_paiement")
   private LocalDateTime datePaiement;
+
+  /** Origine (B41) : déclaration du membre, saisie du gestionnaire ou reprise du cahier. */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "origine", nullable = false, length = 20)
+  private OrigineCotisation origine;
 
   @Column(name = "deleted_at")
   private LocalDateTime deletedAt;

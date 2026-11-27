@@ -219,6 +219,14 @@ public class Tontine extends BaseEntity {
   }
 
   /** Code d'invitation partageable (B16) – null = aucune invitation active. */
+  /** Date de début du cahier quand la tontine a commencé avant l'application (B41). */
+  @Column(name = "date_debut_reelle")
+  private LocalDate dateDebutReelle;
+
+  /** Reprise figée (B41) : soldes de départ plus modifiables ; null = ouverte. */
+  @Column(name = "reprise_figee_le")
+  private LocalDateTime repriseFigeeLe;
+
   @Column(name = "code_invitation", length = 20)
   private String codeInvitation;
 

@@ -1191,6 +1191,25 @@ class CotisationServiceImplTest {
     }
 
     @Test
+    @DisplayName("B41 : tour de reprise n° 0 -> déclaration et saisie refusées (TOUR_DE_REPRISE)")
+    void tourDeReprise() {
+      cycle.setNumeroCycle(0);
+      cycle.setStatut(CycleStatut.TERMINE);
+
+      assertThatThrownBy(
+              () ->
+                  service.recordCotisation(
+                      awa.getKeycloakId(), tontine.getId(), declaration("1000")))
+          .satisfies(e -> code(e, ErrorCode.TOUR_DE_REPRISE));
+      assertThatThrownBy(
+              () ->
+                  service.adminRecordCotisation(
+                      gestionnaire.getKeycloakId(), tontine.getId(), saisie("1000", null)))
+          .satisfies(e -> code(e, ErrorCode.TOUR_DE_REPRISE));
+      verify(cotisationRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("événementielle, sous-cycle du jour : saisie acceptée")
     void evenementielleDuJour() throws Exception {
       tontine.setTontineType(TontineType.EVENEMENTIELLE);

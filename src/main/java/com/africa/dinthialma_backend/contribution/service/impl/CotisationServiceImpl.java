@@ -18,6 +18,7 @@ import com.africa.dinthialma_backend.common.util.CsvWriter;
 import com.africa.dinthialma_backend.common.util.FichierExport;
 import com.africa.dinthialma_backend.common.util.Fuseau;
 import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
+import com.africa.dinthialma_backend.contribution.codeList.OrigineCotisation;
 import com.africa.dinthialma_backend.contribution.codeList.Ponctualite;
 import com.africa.dinthialma_backend.contribution.dto.AdminRecordCotisationRequest;
 import com.africa.dinthialma_backend.contribution.dto.CotisationResponse;
@@ -131,6 +132,7 @@ public class CotisationServiceImpl implements CotisationService {
             .referenceTransaction(request.getReferenceTransaction())
             .note(request.getNote())
             .enregistrePar(caller)
+            .origine(OrigineCotisation.DECLARATION)
             .statut(CotisationStatut.EN_ATTENTE)
             .build();
 
@@ -253,6 +255,7 @@ public class CotisationServiceImpl implements CotisationService {
             .note(request.getNote())
             .datePaiement(request.getDatePaiement())
             .enregistrePar(admin)
+            .origine(OrigineCotisation.SAISIE)
             .statut(CotisationStatut.VALIDE)
             .validePar(admin)
             .dateValidation(LocalDateTime.now())
@@ -996,6 +999,12 @@ public class CotisationServiceImpl implements CotisationService {
    * sous-cycle événementiel pas encore commencé (B47).
    */
   private void verifierTourPayable(Tontine tontine, CycleTontine cycle) throws CustomException {
+    if (cycle.getNumeroCycle() == 0) {
+      throw new BadRequestException(
+          "Le tour de reprise ne reçoit que les soldes de départ recopiés du cahier : choisissez"
+              + " un tour de la tontine",
+          ErrorCode.TOUR_DE_REPRISE);
+    }
     if (cycle.getStatut() == CycleStatut.EN_ATTENTE) {
       throw new BadRequestException(
           "Ce tour n'est pas encore ouvert aux cotisations", ErrorCode.NO_CYCLE_IN_PROGRESS);
