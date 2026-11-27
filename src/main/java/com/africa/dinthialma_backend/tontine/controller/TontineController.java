@@ -514,7 +514,17 @@ public class TontineController {
               + " défaut (B33), effective aux prochaines remises ; `CAISSE` → 400"
               + " `MODE_REMISE_INDISPONIBLE`.\n\n"
               + "`regleRetrait` (événementielle uniquement, sinon 400 `RETRAIT_NON_DISPONIBLE`) :"
-              + " `INTERDIT` ou `LIBRE`, autorise les retraits anticipés (B42).")
+              + " `INTERDIT` ou `LIBRE`, autorise les retraits anticipés (B42).\n\n"
+              + "`ouvertureTours` (B33) : `A_LA_DATE` = chaque tour s'ouvre aussi à sa date de"
+              + " début, remis ou non le précédent (traitement toutes les 5 min ; événementielle :"
+              + " le sous-cycle précédent est clôturé, la distribution finale reste manuelle) ;"
+              + " `A_LA_REMISE` = le tour suivant s'ouvre à la remise du précédent (les tours déjà"
+              + " ouverts le restent).\n\n"
+              + "`remiseAutomatique` (rotative uniquement, sinon 400"
+              + " `REMISE_AUTOMATIQUE_NON_DISPONIBLE`) : à l'échéance du tour, remise avec"
+              + " l'option par défaut ; impossible (ATTENDRE incomplet, commission insuffisante) →"
+              + " rien n'est remis, `REMISE_AUTO_IMPOSSIBLE` au gestionnaire une fois, nouvel"
+              + " essai à chaque passage.")
   public ResponseEntity<CustomResponse> modifierReglages(
       @PathVariable UUID id,
       @RequestBody @Valid ModifierReglagesRequest request,

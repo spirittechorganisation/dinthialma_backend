@@ -11,7 +11,8 @@ import lombok.Setter;
     description =
         "Corps de la requête d'ouverture manuelle d'un cycle."
             + " Disponible uniquement si la tontine est en mode MANUEL."
-            + " Un seul cycle EN_COURS est autorisé à la fois."
+            + " Ouverture A_LA_REMISE : un seul cycle EN_COURS à la fois ; A_LA_DATE (B33) :"
+            + " plusieurs, sans chevauchement de période."
             + " Les gagnants sont désignés après clôture via PATCH /{cycleId}/gagnants.")
 @Getter
 @Setter

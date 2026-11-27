@@ -2,6 +2,7 @@ package com.africa.dinthialma_backend.tontine.repository;
 
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.entity.Tontine;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -11,6 +12,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -47,6 +49,14 @@ public interface TontineRepository
 
   /** Tontine non supprimée par id. */
   Optional<Tontine> findByIdAndDeletedAtIsNull(UUID id);
+
+  /**
+   * Verrou de la tontine jusqu'à la fin de la transaction (B33, lot 3) : sérialise la remise d'un
+   * tour et l'ouverture des tours entre le gestionnaire, la remise automatique et les instances.
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT t FROM Tontine t WHERE t.id = :id AND t.deletedAt IS NULL")
+  Optional<Tontine> verrouiller(@Param("id") UUID id);
 
   /** L'utilisateur est le gestionnaire (créateur) de cette tontine non supprimée. */
   boolean existsByIdAndCreePar_IdAndDeletedAtIsNull(UUID id, UUID createurId);

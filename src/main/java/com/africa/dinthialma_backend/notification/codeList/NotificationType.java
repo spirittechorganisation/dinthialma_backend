@@ -107,5 +107,12 @@ public enum NotificationType {
    * Retrait anticipé d'épargne remis au membre (B42) ; pas envoyé pour un report du cahier daté de
    * plus de 24 h (destinataire : membre).
    */
-  RETRAIT_REMIS
+  RETRAIT_REMIS,
+
+  /**
+   * Remise automatique à l'échéance impossible avec l'option par défaut (B33, lot 3) : jackpot
+   * incomplet en ATTENDRE, commission insuffisante en AVANCE_COMMISSION ; une fois par tour, l'app
+   * retente ensuite (destinataire : gestionnaire).
+   */
+  REMISE_AUTO_IMPOSSIBLE
 }

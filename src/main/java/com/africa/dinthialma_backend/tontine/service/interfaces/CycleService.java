@@ -10,6 +10,7 @@ import com.africa.dinthialma_backend.tontine.dto.PropositionTourResponse;
 import com.africa.dinthialma_backend.tontine.dto.SelectionnerBeneficiaireRequest;
 import com.africa.dinthialma_backend.tontine.entity.Tontine;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -93,6 +94,37 @@ public interface CycleService {
    * @return la part de chaque membre (B51) ; vide si aucune distribution n'a eu lieu
    */
   List<CycleResponse.MembreDistributionInfo> distribuerMaintenant(User caller, Tontine tontine);
+
+  /**
+   * Ouvre les tours arrivés à leur date de début (B33, lot 3, tontine ACTIVE en ouverture {@code
+   * A_LA_DATE}), remis ou non les précédents ; les membres actifs sont prévenus ({@code
+   * CYCLE_OUVERT}). Événementielle : le sous-cycle arrivé s'ouvre et les précédents sont clôturés
+   * (jamais la distribution finale). Verrouille la tontine ; sans effet sinon. Appelée par le
+   * traitement planifié.
+   *
+   * @return nombre de tours ouverts
+   */
+  int ouvrirToursArrives(UUID tontineId, LocalDate aujourdHui);
+
+  /**
+   * Remise automatique à l'échéance (B33, lot 3) : rotative ACTIVE avec {@code remiseAutomatique},
+   * tour EN_COURS dont l'échéance est passée, remis avec l'option par défaut de la tontine. Option
+   * impossible (jackpot incomplet en ATTENDRE, commission insuffisante) : rien n'est remis, le
+   * gestionnaire est prévenu une fois ({@code REMISE_AUTO_IMPOSSIBLE}) et le traitement retente au
+   * passage suivant. Verrouille la tontine.
+   *
+   * @return vrai si le tour a été remis
+   */
+  boolean remettreAEcheance(UUID tontineId, UUID cycleId, LocalDateTime maintenant);
+
+  /**
+   * Nouvel essai de remise automatique après une cotisation validée (B33, lot 3) : seulement pour
+   * un tour EN_COURS dont la remise a déjà été jugée impossible, plutôt que de le recalculer à
+   * chaque passage du planificateur. Même règles que {@link #remettreAEcheance}.
+   *
+   * @return vrai si le tour a été remis
+   */
+  boolean retenterRemiseAutomatique(UUID tontineId, UUID cycleId);
 
   /**
    * Liste l'historique des bénéficiaires de jackpot d'une tontine (cycles TERMINÉ avec bénéficiaire

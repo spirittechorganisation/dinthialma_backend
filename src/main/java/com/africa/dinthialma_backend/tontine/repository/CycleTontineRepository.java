@@ -3,6 +3,7 @@ package com.africa.dinthialma_backend.tontine.repository;
 import com.africa.dinthialma_backend.tontine.codeList.CycleStatut;
 import com.africa.dinthialma_backend.tontine.entity.CycleTontine;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -37,9 +38,48 @@ public interface CycleTontineRepository extends JpaRepository<CycleTontine, UUID
   Optional<CycleTontine> findTopByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleDesc(
       UUID tontineId);
 
-  /** Cycle en cours d'une tontine. */
-  Optional<CycleTontine> findByTontine_IdAndStatutAndDeletedAtIsNull(
+  /**
+   * Cycles d'un statut donné d'une tontine, par numéro croissant. Plusieurs tours peuvent être
+   * EN_COURS à la fois quand les tours s'ouvrent à leur date (B33, lot 3).
+   */
+  List<CycleTontine> findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
       UUID tontineId, CycleStatut statut);
+
+  /**
+   * Tours à ouvrir à leur date (B33, lot 3) : EN_ATTENTE, date de début atteinte, tontine ACTIVE en
+   * ouverture A_LA_DATE.
+   */
+  @Query(
+      "SELECT c FROM CycleTontine c WHERE c.statut ="
+          + " com.africa.dinthialma_backend.tontine.codeList.CycleStatut.EN_ATTENTE"
+          + " AND c.dateDebut <= :jour AND c.deletedAt IS NULL AND c.tontine.deletedAt IS NULL"
+          + " AND c.tontine.statut ="
+          + " com.africa.dinthialma_backend.tontine.codeList.TontineStatut.ACTIVE"
+          + " AND c.tontine.ouvertureTours ="
+          + " com.africa.dinthialma_backend.tontine.codeList.OuvertureTours.A_LA_DATE"
+          + " ORDER BY c.numeroCycle")
+  List<CycleTontine> findAOuvrir(@Param("jour") LocalDate jour);
+
+  /**
+   * Tours à remettre automatiquement (B33, lot 3) : EN_COURS, échéance passée, tontine rotative
+   * ACTIVE avec la remise automatique. Les tours dont la remise a déjà été jugée impossible ne sont
+   * repris que si {@code inclureSignales} (passage horaire) : ils sont surtout retentés à chaque
+   * cotisation validée.
+   */
+  @Query(
+      "SELECT c FROM CycleTontine c WHERE c.statut ="
+          + " com.africa.dinthialma_backend.tontine.codeList.CycleStatut.EN_COURS"
+          + " AND c.echeanceAt <= :maintenant AND c.deletedAt IS NULL"
+          + " AND (:inclureSignales = true OR c.remiseAutoSignaleeAt IS NULL)"
+          + " AND c.tontine.deletedAt IS NULL AND c.tontine.remiseAutomatique = true"
+          + " AND c.tontine.statut ="
+          + " com.africa.dinthialma_backend.tontine.codeList.TontineStatut.ACTIVE"
+          + " AND c.tontine.tontineType ="
+          + " com.africa.dinthialma_backend.tontine.codeList.TontineType.ROTATIVE"
+          + " ORDER BY c.numeroCycle")
+  List<CycleTontine> findARemettre(
+      @Param("maintenant") LocalDateTime maintenant,
+      @Param("inclureSignales") boolean inclureSignales);
 
   /** Cycles d'un statut donné pour un ensemble de tontines (ex : tours EN_COURS). */
   List<CycleTontine> findByTontine_IdInAndStatutAndDeletedAtIsNull(

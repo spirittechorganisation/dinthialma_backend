@@ -308,6 +308,25 @@ class MeServiceImplTest {
     }
 
     @Test
+    @DisplayName(
+        "B33 lot 3 : plusieurs tours ouverts -> le tour en cours est le plus récent, quel que"
+            + " soit l'ordre de lecture")
+    void plusieursToursOuverts() throws Exception {
+      Tontine t = Fixtures.tontine(gestionnaire);
+      mesAdhesions(Fixtures.membre(t, moi, 1));
+      CycleTontine ancien = Fixtures.cycle(t, 1, CycleStatut.EN_COURS);
+      CycleTontine recent = Fixtures.cycle(t, 2, CycleStatut.EN_COURS);
+      CycleTontine autre = Fixtures.cycle(t, 1, CycleStatut.EN_COURS);
+      when(cycleRepository.findByTontine_IdInAndStatutAndDeletedAtIsNull(
+              anyList(), eq(CycleStatut.EN_COURS)))
+          .thenReturn(List.of(ancien, recent, autre));
+
+      MeSummaryResponse r = service.getSummary(kc);
+
+      assertThat(r.getTontines().get(0).getCycleEnCours().getCycleId()).isEqualTo(recent.getId());
+    }
+
+    @Test
     @DisplayName("B32 : due sur l'échéance courante, échéances échues impayées comptées")
     void parEcheance() throws Exception {
       Tontine t = Fixtures.tontine(gestionnaire);

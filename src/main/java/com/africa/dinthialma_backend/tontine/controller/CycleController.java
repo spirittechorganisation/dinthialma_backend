@@ -212,7 +212,10 @@ public class CycleController {
           "🔒 Rôles : créateur de la tontine, SUPER_ADMIN.\n\n"
               + "**Mode MANUEL uniquement.** Crée et ouvre un nouveau cycle avec les dates"
               + " spécifiées (`dateDebut`, `dateFin`).\n\n"
-              + "Conditions : tontine ACTIVE, aucun autre cycle EN_COURS, dateDebut ≤ dateFin.\n\n"
+              + "Conditions : tontine ACTIVE, dateDebut ≤ dateFin ; ouverture `A_LA_REMISE` :"
+              + " aucun autre cycle EN_COURS ; `A_LA_DATE` (B33) : les tours précédents peuvent"
+              + " rester ouverts, mais `dateDebut` doit suivre la fin du dernier tour EN_COURS"
+              + " (sinon `CYCLE_ALREADY_IN_PROGRESS`).\n\n"
               + "Les membres ACTIFS reçoivent une notification `CYCLE_OUVERT`. Les gagnants ne"
               + " sont pas choisis ici : ils sont désignés après la clôture via"
               + " `PATCH /{cycleId}/beneficiaire` (ordre MANUEL).")
@@ -223,7 +226,9 @@ public class CycleController {
         content = @Content(schema = @Schema(implementation = CycleResponse.class))),
     @ApiResponse(
         responseCode = "400",
-        description = "Mode pas MANUEL, tontine pas ACTIVE, ou cycle déjà EN_COURS"),
+        description =
+            "Mode pas MANUEL, tontine pas ACTIVE, ou `CYCLE_ALREADY_IN_PROGRESS` (cycle déjà"
+                + " EN_COURS en A_LA_REMISE, période chevauchante en A_LA_DATE)"),
     @ApiResponse(responseCode = "401", description = "JWT manquant ou expiré"),
     @ApiResponse(responseCode = "403", description = "Accès interdit"),
     @ApiResponse(responseCode = "404", description = "Tontine ou bénéficiaire introuvable"),

@@ -40,6 +40,7 @@ import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
 import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.MonRoleTontine;
+import com.africa.dinthialma_backend.tontine.codeList.OuvertureTours;
 import com.africa.dinthialma_backend.tontine.codeList.RegleRetrait;
 import com.africa.dinthialma_backend.tontine.codeList.RoleFiltreTontine;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
@@ -1103,6 +1104,98 @@ class TontineServiceImplTest {
                   .updateTontine(gestionnaire.getKeycloakId(), tontine.getId(), req)
                   .getModeRemise())
           .isEqualTo(ModeRemise.ATTENDRE);
+    }
+  }
+
+  @Nested
+  @DisplayName("ouverture des tours et remise automatique (B33, lot 3)")
+  class ReglagesOuvertureEtRemise {
+
+    @Test
+    @DisplayName(
+        "création : A_LA_DATE et remise manuelle par défaut ; choix respectés ; jamais de remise"
+            + " automatique en événementielle")
+    void creation() throws Exception {
+      TontineResponse defaut = service.createTontine(gestionnaire.getKeycloakId(), rotative());
+      assertThat(defaut.getOuvertureTours()).isEqualTo(OuvertureTours.A_LA_DATE);
+      assertThat(defaut.isRemiseAutomatique()).isFalse();
+
+      CreateTontineRequest choix = rotative();
+      choix.setOuvertureTours(OuvertureTours.A_LA_REMISE);
+      choix.setRemiseAutomatique(true);
+      TontineResponse r = service.createTontine(gestionnaire.getKeycloakId(), choix);
+      assertThat(r.getOuvertureTours()).isEqualTo(OuvertureTours.A_LA_REMISE);
+      assertThat(r.isRemiseAutomatique()).isTrue();
+
+      CreateTontineRequest evt = requeteEvenementielle();
+      evt.setRemiseAutomatique(true);
+      assertThat(service.createTontine(gestionnaire.getKeycloakId(), evt).isRemiseAutomatique())
+          .isFalse();
+    }
+
+    @Test
+    @DisplayName(
+        "en cours : modifiables à tout moment et audités ; tontine antérieure lue A_LA_REMISE")
+    void enCours() throws Exception {
+      tontine.setStatut(TontineStatut.ACTIVE);
+      assertThat(
+              service
+                  .modifierReglages(
+                      gestionnaire.getKeycloakId(), tontine.getId(), new ModifierReglagesRequest())
+                  .getOuvertureTours())
+          .isEqualTo(OuvertureTours.A_LA_REMISE);
+
+      ModifierReglagesRequest req = new ModifierReglagesRequest();
+      req.setOuvertureTours(OuvertureTours.A_LA_DATE);
+      req.setRemiseAutomatique(true);
+      TontineResponse r =
+          service.modifierReglages(gestionnaire.getKeycloakId(), tontine.getId(), req);
+
+      assertThat(r.getOuvertureTours()).isEqualTo(OuvertureTours.A_LA_DATE);
+      assertThat(r.isRemiseAutomatique()).isTrue();
+      verify(auditService)
+          .log(
+              gestionnaire,
+              "tontines",
+              tontine.getId(),
+              "ouvertureTours",
+              "A_LA_REMISE",
+              "A_LA_DATE");
+      verify(auditService)
+          .log(gestionnaire, "tontines", tontine.getId(), "remiseAutomatique", "false", "true");
+
+      ModifierReglagesRequest retour = new ModifierReglagesRequest();
+      retour.setRemiseAutomatique(false);
+      assertThat(
+              service
+                  .modifierReglages(gestionnaire.getKeycloakId(), tontine.getId(), retour)
+                  .isRemiseAutomatique())
+          .isFalse();
+    }
+
+    @Test
+    @DisplayName(
+        "événementielle : ouverture modifiable, remise automatique refusée"
+            + " (REMISE_AUTOMATIQUE_NON_DISPONIBLE)")
+    void evenementielle() throws Exception {
+      tontine.setStatut(TontineStatut.ACTIVE);
+      tontine.setTontineType(TontineType.EVENEMENTIELLE);
+      ModifierReglagesRequest ouverture = new ModifierReglagesRequest();
+      ouverture.setOuvertureTours(OuvertureTours.A_LA_DATE);
+      assertThat(
+              service
+                  .modifierReglages(gestionnaire.getKeycloakId(), tontine.getId(), ouverture)
+                  .getOuvertureTours())
+          .isEqualTo(OuvertureTours.A_LA_DATE);
+
+      ModifierReglagesRequest remise = new ModifierReglagesRequest();
+      remise.setRemiseAutomatique(true);
+      assertThatThrownBy(
+              () -> service.modifierReglages(gestionnaire.getKeycloakId(), tontine.getId(), remise))
+          .satisfies(
+              e ->
+                  assertThat(((CustomException) e).getCode())
+                      .isEqualTo(ErrorCode.REMISE_AUTOMATIQUE_NON_DISPONIBLE));
     }
   }
 

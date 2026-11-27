@@ -233,7 +233,9 @@ public enum ErrorCode {
    * Retrait total refusé tant que le membre a des cotisations EN_ATTENTE ou EN_RETARD (B42) : les
    * valider ou les refuser d'abord ; {@code data.cotisationsEnAttente}.
    */
-  RETRAIT_COTISATIONS_EN_ATTENTE;
+  RETRAIT_COTISATIONS_EN_ATTENTE,
+  /** Remise automatique à l'échéance demandée sur une tontine événementielle (B33, lot 3). */
+  REMISE_AUTOMATIQUE_NON_DISPONIBLE;
 
   /** Code générique correspondant à un statut HTTP (repli quand aucun code métier n'est fourni). */
   public static ErrorCode fromStatus(HttpStatusCode status) {

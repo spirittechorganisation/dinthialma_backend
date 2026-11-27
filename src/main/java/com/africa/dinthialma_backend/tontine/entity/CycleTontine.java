@@ -121,6 +121,10 @@ public class CycleTontine extends BaseEntity {
   @Column(name = "date_remise")
   private LocalDate dateRemise;
 
+  /** Remise automatique impossible déjà signalée au gestionnaire (B33, lot 3) : une seule fois. */
+  @Column(name = "remise_auto_signalee_at")
+  private LocalDateTime remiseAutoSignaleeAt;
+
   /** Soft delete. */
   @Column(name = "deleted_at")
   private LocalDateTime deletedAt;

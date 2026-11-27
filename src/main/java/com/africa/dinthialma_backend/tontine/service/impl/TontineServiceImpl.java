@@ -27,6 +27,7 @@ import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
 import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.OrdreBeneficiaire;
+import com.africa.dinthialma_backend.tontine.codeList.OuvertureTours;
 import com.africa.dinthialma_backend.tontine.codeList.RegleRetrait;
 import com.africa.dinthialma_backend.tontine.codeList.RoleFiltreTontine;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
@@ -138,6 +139,14 @@ public class TontineServiceImpl implements TontineService {
             .cotisationsParTour(cotisationsParTour)
             .declenchementJackpot(declenchement(type, request.getDeclenchementJackpot()))
             .modeRemise(modeRemise(request.getModeRemise()))
+            // B33 lot 3 : une nouvelle tontine ouvre ses tours à leur date ; remise par le
+            // gestionnaire, sauf choix contraire
+            .ouvertureTours(
+                request.getOuvertureTours() != null
+                    ? request.getOuvertureTours()
+                    : OuvertureTours.A_LA_DATE)
+            .remiseAutomatique(
+                type == TontineType.ROTATIVE && Boolean.TRUE.equals(request.getRemiseAutomatique()))
             // B42 : retraits anticipés permis par défaut sur une nouvelle épargne événementielle
             .regleRetrait(
                 type == TontineType.EVENEMENTIELLE ? RegleRetrait.LIBRE : RegleRetrait.INTERDIT)
@@ -490,6 +499,28 @@ public class TontineServiceImpl implements TontineService {
           "Les retraits anticipés concernent les tontines événementielles",
           ErrorCode.RETRAIT_NON_DISPONIBLE);
     }
+    if (request.getRemiseAutomatique() != null && !rotative) {
+      throw new BadRequestException(
+          "La remise automatique à l'échéance concerne les tontines rotatives : en événementielle,"
+              + " la distribution finale est toujours faite par le gestionnaire",
+          ErrorCode.REMISE_AUTOMATIQUE_NON_DISPONIBLE);
+    }
+    modifier(
+        caller,
+        tontine,
+        "ouvertureTours",
+        tontine.getOuvertureToursEffectif(),
+        request.getOuvertureTours(),
+        OuvertureTours::name,
+        tontine::setOuvertureTours);
+    modifier(
+        caller,
+        tontine,
+        "remiseAutomatique",
+        tontine.isRemiseAutomatique(),
+        request.getRemiseAutomatique(),
+        String::valueOf,
+        tontine::setRemiseAutomatique);
     modifier(
         caller,
         tontine,

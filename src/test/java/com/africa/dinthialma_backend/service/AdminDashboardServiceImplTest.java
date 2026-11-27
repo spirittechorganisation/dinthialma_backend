@@ -392,12 +392,12 @@ class AdminDashboardServiceImplTest {
                       .cycle(tour)
                       .membre(Fixtures.membre(rotative, benef, 2))
                       .build())));
-      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
               rotative.getId(), CycleStatut.EN_COURS))
-          .thenReturn(Optional.of(tour));
-      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+          .thenReturn(List.of(tour));
+      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
               evt.getId(), CycleStatut.EN_COURS))
-          .thenReturn(Optional.empty());
+          .thenReturn(List.of());
       when(cotisationRepository.countAndSumByStatutForCycle(tour.getId()))
           .thenReturn(
               List.of(
@@ -477,9 +477,9 @@ class AdminDashboardServiceImplTest {
       when(membreRepository.findParametresToursEnCoursByCreateur(simple.getId()))
           .thenReturn(List.of());
       CycleTontine tour = Fixtures.cycle(t, 1, CycleStatut.EN_COURS);
-      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNull(
+      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
               t.getId(), CycleStatut.EN_COURS))
-          .thenReturn(Optional.of(tour));
+          .thenReturn(List.of(tour));
       when(cotisationRepository.countAndSumByStatutForCycle(tour.getId())).thenReturn(List.of());
 
       MyDashboardResponse.CycleEnCoursInfo info =
@@ -489,6 +489,38 @@ class AdminDashboardServiceImplTest {
       assertThat(info.getMembresAyantPaye()).isZero();
       assertThat(info.getMontantCollecte()).isEqualByComparingTo("0");
       assertThat(info.getMontantAttendu()).isNull();
+    }
+
+    @Test
+    @DisplayName(
+        "B33 lot 3 : plusieurs tours ouverts -> tour en cours = le plus récent, les précédents"
+            + " dans toursARemettre")
+    void toursARemettre() throws Exception {
+      String k = simple.getKeycloakId();
+      Tontine t = Fixtures.tontine(simple);
+      when(tontineRepository.findByCreePar_IdAndDeletedAtIsNull(simple.getId(), page))
+          .thenReturn(new PageImpl<>(List.of(t)));
+      when(membreRepository.findParametresToursEnCoursByCreateur(simple.getId()))
+          .thenReturn(List.of());
+      CycleTontine ancien = Fixtures.cycle(t, 1, CycleStatut.EN_COURS);
+      CycleTontine recent = Fixtures.cycle(t, 2, CycleStatut.EN_COURS);
+      when(cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
+              t.getId(), CycleStatut.EN_COURS))
+          .thenReturn(List.of(ancien, recent));
+      when(cotisationRepository.countAndSumByStatutForCycle(recent.getId())).thenReturn(List.of());
+
+      MyDashboardResponse.TontineStats resume =
+          service.getMyDashboard(k, page).getTontines().getContent().get(0);
+
+      assertThat(resume.getCycleEnCours().getCycleId()).isEqualTo(recent.getId());
+      assertThat(resume.getToursARemettre())
+          .singleElement()
+          .satisfies(
+              tour -> {
+                assertThat(tour.getCycleId()).isEqualTo(ancien.getId());
+                assertThat(tour.getNumeroCycle()).isEqualTo(1);
+                assertThat(tour.getDateFin()).isEqualTo(ancien.getDateFin());
+              });
     }
   }
 }

@@ -37,6 +37,7 @@ import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
 import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.OrdreBeneficiaire;
+import com.africa.dinthialma_backend.tontine.codeList.OuvertureTours;
 import com.africa.dinthialma_backend.tontine.codeList.TontineStatut;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import com.africa.dinthialma_backend.tontine.dto.BeneficiaireHistoriqueResponse;
@@ -229,13 +230,7 @@ public class CycleServiceImpl implements CycleService {
       throw new BadRequestException("La date de fin doit être postérieure à la date de début");
     }
 
-    if (cycleRepository
-        .findByTontine_IdAndStatutAndDeletedAtIsNull(tontineId, CycleStatut.EN_COURS)
-        .isPresent()) {
-      throw new BadRequestException(
-          "Un cycle est déjà en cours. Clôturez-le avant d'en ouvrir un nouveau",
-          ErrorCode.CYCLE_ALREADY_IN_PROGRESS);
-    }
+    verifierOuverturePossible(tontine, request.getDateDebut());
 
     Optional<CycleTontine> precedent =
         cycleRepository.findTopByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleDesc(tontineId);
@@ -280,6 +275,33 @@ public class CycleServiceImpl implements CycleService {
     return reponse(saved);
   }
 
+  /**
+   * Un seul tour EN_COURS à la fois en ouverture A_LA_REMISE ; en A_LA_DATE (B33, lot 3), le
+   * nouveau tour peut s'ouvrir sans que les précédents soient remis, mais pas sur leur période.
+   */
+  private void verifierOuverturePossible(Tontine tontine, LocalDate dateDebut)
+      throws CustomException {
+    List<CycleTontine> ouverts =
+        cycleRepository.findByTontine_IdAndStatutAndDeletedAtIsNullOrderByNumeroCycleAsc(
+            tontine.getId(), CycleStatut.EN_COURS);
+    if (ouverts.isEmpty()) {
+      return;
+    }
+    if (tontine.getOuvertureToursEffectif() == OuvertureTours.A_LA_REMISE) {
+      throw new BadRequestException(
+          "Un cycle est déjà en cours. Clôturez-le avant d'en ouvrir un nouveau",
+          ErrorCode.CYCLE_ALREADY_IN_PROGRESS);
+    }
+    LocalDate finDernier = ouverts.get(ouverts.size() - 1).getDateFin();
+    if (!dateDebut.isAfter(finDernier)) {
+      throw new BadRequestException(
+          "Un tour est en cours jusqu'au "
+              + JOUR.format(finDernier)
+              + " : le nouveau tour doit commencer après",
+          ErrorCode.CYCLE_ALREADY_IN_PROGRESS);
+    }
+  }
+
   // ─── Clôture ─────────────────────────────────────────────────────────────
 
   @Override
@@ -291,6 +313,8 @@ public class CycleServiceImpl implements CycleService {
     Tontine tontine = findTontineById(tontineId);
     assertIsCreatorOrSuperAdmin(caller, tontine);
 
+    // Une seule remise à la fois par tontine : gestionnaire, remise automatique, TOUS_PAYES (B33)
+    tontineRepository.verrouiller(tontineId);
     CycleTontine cycle = findCycleById(tontineId, cycleId);
 
     if (cycle.getStatut() != CycleStatut.EN_COURS) {
@@ -466,6 +490,212 @@ public class CycleServiceImpl implements CycleService {
     return Optional.empty();
   }
 
+  // ─── Ouverture à la date et remise automatique (B33, lot 3) ──────────────
+
+  @Override
+  public int ouvrirToursArrives(UUID tontineId, LocalDate aujourdHui) {
+    Optional<Tontine> verrouillee = tontineRepository.verrouiller(tontineId);
+    if (verrouillee.isEmpty()
+        || verrouillee.get().getStatut() != TontineStatut.ACTIVE
+        || verrouillee.get().getOuvertureToursEffectif() != OuvertureTours.A_LA_DATE) {
+      return 0;
+    }
+    Tontine tontine = verrouillee.get();
+    List<CycleTontine> tours =
+        cycleRepository.findByTontine_IdAndDeletedAtIsNullOrderByNumeroCycleAsc(tontineId);
+    List<CycleTontine> arrives =
+        tours.stream()
+            .filter(
+                c ->
+                    c.getStatut() == CycleStatut.EN_ATTENTE
+                        && !c.getDateDebut().isAfter(aujourdHui))
+            .toList();
+    if (arrives.isEmpty()) {
+      return 0;
+    }
+    if (tontine.getTontineType() == TontineType.EVENEMENTIELLE) {
+      basculerSousCycles(tontine, tours, arrives.get(arrives.size() - 1));
+    } else {
+      arrives.forEach(tour -> ouvrirALaDate(tontine, tour));
+    }
+    return arrives.size();
+  }
+
+  /**
+   * Tour rotatif ouvert à sa date, remis ou non le précédent : les membres actifs sont prévenus.
+   */
+  private void ouvrirALaDate(Tontine tontine, CycleTontine tour) {
+    tour.setStatut(CycleStatut.EN_COURS);
+    cycleRepository.save(tour);
+    auditService.log(
+        tontine.getCreePar(),
+        "cycles_tontine",
+        tour.getId(),
+        "statut",
+        CycleStatut.EN_ATTENTE.name(),
+        CycleStatut.EN_COURS.name());
+    log.info(
+        "Tour ouvert à sa date – tontineId={} cycleId={} num={}",
+        tontine.getId(),
+        tour.getId(),
+        tour.getNumeroCycle());
+    membreRepository
+        .findByTontine_IdAndStatutAndDeletedAtIsNull(tontine.getId(), MembreStatut.ACTIF)
+        .forEach(
+            m ->
+                notificationService.notify(
+                    m.getUser().getId(),
+                    NotificationType.CYCLE_OUVERT,
+                    "Tour #" + tour.getNumeroCycle() + " ouvert",
+                    "Le tour #"
+                        + tour.getNumeroCycle()
+                        + " de la tontine "
+                        + tontine.getNom()
+                        + " est ouvert. Vous pouvez enregistrer votre cotisation.",
+                    tontine.getId(),
+                    NotificationLiens.cycle(tour.getId(), m.getId())));
+  }
+
+  /**
+   * Événementielle A_LA_DATE : le sous-cycle arrivé à sa date s'ouvre et les précédents sont
+   * clôturés (simple écriture, rien n'est remis), y compris ceux sautés si le traitement n'est pas
+   * passé. Le sous-cycle ouvert étant postérieur, aucune de ces clôtures n'est la distribution
+   * finale, qui reste manuelle.
+   */
+  private void basculerSousCycles(Tontine tontine, List<CycleTontine> tours, CycleTontine cible) {
+    for (CycleTontine tour : tours) {
+      if (tour.getNumeroCycle() < cible.getNumeroCycle()
+          && tour.getStatut() != CycleStatut.TERMINE) {
+        // ouvre le sous-cycle suivant au passage
+        closeCycleEvenementielle(tontine.getCreePar(), tontine, tontine.getId(), tour);
+      }
+    }
+    if (cible.getStatut() == CycleStatut.EN_ATTENTE) {
+      cible.setStatut(CycleStatut.EN_COURS);
+      cycleRepository.save(cible);
+    }
+    log.info(
+        "Sous-cycle ouvert à sa date – tontineId={} cycleId={} num={}",
+        tontine.getId(),
+        cible.getId(),
+        cible.getNumeroCycle());
+  }
+
+  @Override
+  public boolean remettreAEcheance(UUID tontineId, UUID cycleId, LocalDateTime maintenant) {
+    Optional<Tontine> verrouillee = tontineRepository.verrouiller(tontineId);
+    if (verrouillee.isEmpty()) {
+      return false;
+    }
+    Tontine tontine = verrouillee.get();
+    Optional<CycleTontine> trouve =
+        cycleRepository.findByIdAndTontine_IdAndDeletedAtIsNull(cycleId, tontineId);
+    if (trouve.isEmpty() || !remiseAutomatiqueDue(tontine, trouve.get(), maintenant)) {
+      return false;
+    }
+    CycleTontine cycle = trouve.get();
+    ModeRemise mode = tontine.getModeRemiseEffectif();
+    RemiseTour calcul = calculerRemise(tontineId, cycle, mode);
+    if (!calcul.resultat().possible()) {
+      signalerRemiseImpossible(tontine, cycle, mode, calcul, maintenant);
+      return false;
+    }
+    log.info(
+        "Remise automatique à l'échéance – tontineId={} cycleId={} num={} mode={}",
+        tontineId,
+        cycleId,
+        cycle.getNumeroCycle(),
+        mode);
+    try {
+      closeCycleRotative(tontine.getCreePar(), tontine, tontineId, cycle, mode);
+    } catch (CustomException e) {
+      // calcul vérifié juste avant : ne se produit pas
+      throw new IllegalStateException(e);
+    }
+    suggererCloture(tontine);
+    return true;
+  }
+
+  @Override
+  public boolean retenterRemiseAutomatique(UUID tontineId, UUID cycleId) {
+    return cycleRepository
+        .findByIdAndTontine_IdAndDeletedAtIsNull(cycleId, tontineId)
+        .filter(c -> c.getStatut() == CycleStatut.EN_COURS && c.getRemiseAutoSignaleeAt() != null)
+        .map(c -> remettreAEcheance(tontineId, cycleId, Fuseau.maintenant()))
+        .orElse(false);
+  }
+
+  /** Rotative ACTIVE avec la remise automatique, tour EN_COURS dont l'échéance est passée. */
+  private static boolean remiseAutomatiqueDue(
+      Tontine tontine, CycleTontine cycle, LocalDateTime maintenant) {
+    return tontine.getTontineType() == TontineType.ROTATIVE
+        && tontine.getStatut() == TontineStatut.ACTIVE
+        && tontine.isRemiseAutomatique()
+        && cycle.getStatut() == CycleStatut.EN_COURS
+        && cycle.getEcheanceAt() != null
+        && !maintenant.isBefore(cycle.getEcheanceAt());
+  }
+
+  /** Remise automatique impossible : le gestionnaire est prévenu une fois par tour. */
+  private void signalerRemiseImpossible(
+      Tontine tontine,
+      CycleTontine cycle,
+      ModeRemise mode,
+      RemiseTour calcul,
+      LocalDateTime maintenant) {
+    if (cycle.getRemiseAutoSignaleeAt() != null) {
+      return;
+    }
+    cycle.setRemiseAutoSignaleeAt(maintenant);
+    cycleRepository.save(cycle);
+    String raison =
+        mode == ModeRemise.ATTENDRE
+            ? "il manque "
+                + CalculRemise.manquant(calcul.prevu(), calcul.collecte()).toPlainString()
+                + " FCFA (option « attendre »). Elle se fera dès que le jackpot sera réuni."
+            : "l'option de remise par défaut ("
+                + mode.name()
+                + ") ne s'applique pas. Remettez le jackpot vous-même en choisissant une option.";
+    notificationService.notify(
+        tontine.getCreePar().getId(),
+        NotificationType.REMISE_AUTO_IMPOSSIBLE,
+        "Remise automatique impossible",
+        "Le tour #"
+            + cycle.getNumeroCycle()
+            + " de "
+            + tontine.getNom()
+            + " n'a pas pu être remis à l'échéance : "
+            + raison,
+        tontine.getId(),
+        NotificationLiens.cycle(cycle.getId(), null));
+    log.info(
+        "Remise automatique impossible – tontineId={} cycleId={} mode={}",
+        tontine.getId(),
+        cycle.getId(),
+        mode);
+  }
+
+  /** Collecte VALIDÉE du tour, jackpot prévu et résultat de l'option de remise (B33). */
+  private record RemiseTour(
+      BigDecimal collecte, BigDecimal prevu, CalculRemise.Resultat resultat) {}
+
+  private RemiseTour calculerRemise(UUID tontineId, CycleTontine cycle, ModeRemise mode) {
+    BigDecimal collecte =
+        cotisationRepository
+            .findByCycle_IdAndStatutAndDeletedAtIsNull(cycle.getId(), CotisationStatut.VALIDE)
+            .stream()
+            .map(c -> c.getMontant() != null ? c.getMontant() : BigDecimal.ZERO)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    List<TontineCommission> commissions =
+        commissionRepository.findByTontine_IdAndDeletedAtIsNull(tontineId);
+    // Option de remise (B33) : DISPONIBLE = ce qui est validé (fonctionnement historique)
+    BigDecimal prevu = suiviTour.etat(cycle).montantJackpotPrevu();
+    if (prevu == null) {
+      prevu = collecte;
+    }
+    return new RemiseTour(collecte, prevu, CalculRemise.remise(mode, prevu, collecte, commissions));
+  }
+
   // ─── Clôture ROTATIVE ────────────────────────────────────────────────────
 
   private CycleResponse closeCycleRotative(
@@ -474,22 +704,10 @@ public class CycleServiceImpl implements CycleService {
 
     UUID cycleId = cycle.getId();
 
-    BigDecimal jackpot =
-        cotisationRepository
-            .findByCycle_IdAndStatutAndDeletedAtIsNull(cycleId, CotisationStatut.VALIDE)
-            .stream()
-            .map(c -> c.getMontant() != null ? c.getMontant() : BigDecimal.ZERO)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-    List<TontineCommission> commissions =
-        commissionRepository.findByTontine_IdAndDeletedAtIsNull(tontineId);
-
-    // Option de remise (B33) : DISPONIBLE = ce qui est validé (fonctionnement historique)
-    BigDecimal prevu = suiviTour.etat(cycle).montantJackpotPrevu();
-    if (prevu == null) {
-      prevu = jackpot;
-    }
-    CalculRemise.Resultat remise = CalculRemise.remise(mode, prevu, jackpot, commissions);
+    RemiseTour calcul = calculerRemise(tontineId, cycle, mode);
+    BigDecimal jackpot = calcul.collecte();
+    BigDecimal prevu = calcul.prevu();
+    CalculRemise.Resultat remise = calcul.resultat();
     if (!remise.possible()) {
       throw remiseRefusee(mode, prevu, jackpot);
     }
