@@ -353,10 +353,35 @@ public class TontineServiceImpl implements TontineService {
     }
   }
 
+  /**
+   * Reprise d'un cahier (B41) : la date du cahier doit rester antérieure au nouveau début, et le
+   * tour de reprise s'arrête la veille.
+   */
+  private void suivreTourDeReprise(Tontine tontine, LocalDate dateDebut) throws CustomException {
+    if (tontine.getDateDebutReelle() == null) {
+      return;
+    }
+    if (!tontine.getDateDebutReelle().isBefore(dateDebut)) {
+      throw new BadRequestException(
+          "La tontine reprend un cahier commencé le "
+              + tontine.getDateDebutReelle()
+              + " : la date de début doit être postérieure",
+          ErrorCode.REPRISE_DATE_INVALIDE);
+    }
+    cycleRepository
+        .findByTontine_IdAndNumeroCycleAndDeletedAtIsNull(tontine.getId(), 0)
+        .ifPresent(
+            tour -> {
+              tour.setDateFin(dateDebut.minusDays(1));
+              cycleRepository.save(tour);
+            });
+  }
+
   private void appliquerChampsCommuns(User caller, Tontine tontine, UpdateTontineRequest request)
       throws CustomException {
     if (request.getDateDebut() != null) {
       verifierDateDebut(request.getDateDebut());
+      suivreTourDeReprise(tontine, request.getDateDebut());
     }
     String nom = request.getNom() != null ? request.getNom().trim() : null;
     modifier(caller, tontine, "nom", tontine.getNom(), nom, String::valueOf, tontine::setNom);
@@ -633,7 +658,9 @@ public class TontineServiceImpl implements TontineService {
     boolean genererTours =
         (tontine.getTontineType() == TontineType.EVENEMENTIELLE
                 || tontine.getModeCycle() == ModeCycle.AUTOMATIQUE)
-            && !cycleRepository.existsByTontine_IdAndDeletedAtIsNull(id);
+            // le tour de reprise n° 0 (B41) n'empêche pas la génération des tours
+            && !cycleRepository.existsByTontine_IdAndNumeroCycleGreaterThanAndDeletedAtIsNull(
+                id, 0);
     if (genererTours) {
       // B46 : les tours partent de dateDebut ; devenue passée depuis la création, elle ferait
       // démarrer le premier tour dans le passé

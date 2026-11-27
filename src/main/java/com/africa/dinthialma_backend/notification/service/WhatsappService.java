@@ -301,4 +301,20 @@ public class WhatsappService {
             + appUrl;
     send(CategorieWhatsapp.JACKPOT, phone, message);
   }
+
+  /** Solde de départ repris du cahier, à la reprise figée (B41) : le membre peut le contester. */
+  public void sendSoldeDepart(
+      String phone, String tontineName, String montant, String dateDebutReelle) {
+    String message =
+        "📒 *Dinthialma* – Votre épargne *"
+            + tontineName
+            + "* est maintenant suivie dans l'application.\nSolde de départ repris du cahier"
+            + " (depuis le "
+            + dateDebutReelle
+            + ") : *"
+            + montant
+            + " FCFA*.\nUne erreur ? Signalez-la à votre gestionnaire.\n👉 Détails : "
+            + appUrl;
+    send(CategorieWhatsapp.JACKPOT, phone, message);
+  }
 }

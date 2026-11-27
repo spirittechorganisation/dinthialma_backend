@@ -543,6 +543,31 @@ class TontineServiceImplTest {
 
     @Test
     @DisplayName(
+        "B41 : reprise d'un cahier -> le tour de reprise suit la nouvelle date de début ; date pas"
+            + " postérieure au cahier refusée (REPRISE_DATE_INVALIDE)")
+    void repriseSuitLaDateDeDebut() throws Exception {
+      tontine.setDateDebutReelle(LocalDate.of(2026, 1, 10));
+      CycleTontine tourZero = Fixtures.cycle(tontine, 0, CycleStatut.TERMINE);
+      when(cycleRepository.findByTontine_IdAndNumeroCycleAndDeletedAtIsNull(tontine.getId(), 0))
+          .thenReturn(Optional.of(tourZero));
+      UpdateTontineRequest r = new UpdateTontineRequest();
+      r.setDateDebut(LocalDate.of(2026, 2, 1));
+
+      service.updateTontine(gestionnaire.getKeycloakId(), tontine.getId(), r);
+      assertThat(tourZero.getDateFin()).isEqualTo(LocalDate.of(2026, 1, 31));
+
+      UpdateTontineRequest avant = new UpdateTontineRequest();
+      avant.setDateDebut(LocalDate.of(2026, 1, 10));
+      assertThatThrownBy(
+              () -> service.updateTontine(gestionnaire.getKeycloakId(), tontine.getId(), avant))
+          .satisfies(
+              e ->
+                  assertThat(((CustomException) e).getCode())
+                      .isEqualTo(ErrorCode.REPRISE_DATE_INVALIDE));
+    }
+
+    @Test
+    @DisplayName(
         "champs EVENEMENTIELLE appliqués seulement à ce type ; échéance antérieure refusée")
     void champsEvenementiels() throws Exception {
       UpdateTontineRequest r = new UpdateTontineRequest();
@@ -795,7 +820,9 @@ class TontineServiceImplTest {
     void reactivation() throws Exception {
       tontine.setModeCycle(ModeCycle.AUTOMATIQUE);
       tontine.setStatut(TontineStatut.SUSPENDUE);
-      when(cycleRepository.existsByTontine_IdAndDeletedAtIsNull(tontine.getId())).thenReturn(true);
+      when(cycleRepository.existsByTontine_IdAndNumeroCycleGreaterThanAndDeletedAtIsNull(
+              tontine.getId(), 0))
+          .thenReturn(true);
       service.activateTontine(gestionnaire.getKeycloakId(), tontine.getId());
       assertThat(cyclesCrees).isEmpty();
     }
@@ -1270,7 +1297,9 @@ class TontineServiceImplTest {
 
       tontine.setModeCycle(ModeCycle.AUTOMATIQUE);
       tontine.setStatut(TontineStatut.SUSPENDUE);
-      when(cycleRepository.existsByTontine_IdAndDeletedAtIsNull(tontine.getId())).thenReturn(true);
+      when(cycleRepository.existsByTontine_IdAndNumeroCycleGreaterThanAndDeletedAtIsNull(
+              tontine.getId(), 0))
+          .thenReturn(true);
       assertThat(service.activateTontine(gestionnaire.getKeycloakId(), tontine.getId()).getStatut())
           .isEqualTo(TontineStatut.ACTIVE);
     }

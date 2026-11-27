@@ -29,6 +29,7 @@ import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
 import com.africa.dinthialma_backend.contribution.dto.EtatTour;
 import com.africa.dinthialma_backend.contribution.entity.Cotisation;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
+import com.africa.dinthialma_backend.contribution.service.interfaces.RepriseService;
 import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
 import com.africa.dinthialma_backend.epargne.repository.RetraitEpargneRepository;
 import com.africa.dinthialma_backend.jackpot.service.interfaces.PrioriteJackpotService;
@@ -118,6 +119,7 @@ class CycleServiceImplTest {
   @Mock private PrioriteJackpotService prioriteService;
   @Mock private SuiviTourService suiviTour;
   @Mock private RetraitEpargneRepository retraitRepository;
+  @Mock private RepriseService repriseService;
   @InjectMocks private CycleServiceImpl service;
 
   private User gestionnaire;
@@ -1522,6 +1524,7 @@ class CycleServiceImplTest {
           .thenReturn(List.of(commission(CommissionType.POURCENTAGE_JACKPOT, "10")));
 
       CycleResponse r = service.closeCycle(kc, tontine.getId(), c.getId());
+      verify(repriseService).figerSiOuverte(gestionnaire, tontine);
 
       assertThat(r.getDistributionParMembre())
           .extracting(CycleResponse.MembreDistributionInfo::getMembreId)

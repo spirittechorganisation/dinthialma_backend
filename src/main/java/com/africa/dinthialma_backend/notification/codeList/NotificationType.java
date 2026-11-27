@@ -114,5 +114,11 @@ public enum NotificationType {
    * incomplet en ATTENDRE, commission insuffisante en AVANCE_COMMISSION ; une fois par tour, l'app
    * retente ensuite (destinataire : gestionnaire).
    */
-  REMISE_AUTO_IMPOSSIBLE
+  REMISE_AUTO_IMPOSSIBLE,
+
+  /**
+   * Reprise figée (B41) : solde de départ recopié du cahier, pour que le membre puisse le contester
+   * (destinataire : chaque membre ayant un solde ; in-app + WhatsApp famille JACKPOT).
+   */
+  SOLDE_DEPART
 }

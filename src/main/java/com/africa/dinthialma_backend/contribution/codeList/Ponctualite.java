@@ -17,11 +17,12 @@ import java.time.temporal.ChronoUnit;
     description =
         "A_TEMPS = déclarée (ou payée en main propre) avant l'échéance du tour ; EN_RETARD = après"
             + " l'échéance ; NON_DECLAREE = aucune déclaration retenue (aucune, ou seulement"
-            + " refusée)")
+            + " refusée) ; REPRISE = solde de départ repris du cahier (B41), hors ponctualité")
 public enum Ponctualite {
   A_TEMPS,
   EN_RETARD,
-  NON_DECLAREE;
+  NON_DECLAREE,
+  REPRISE;
 
   /**
    * Ponctualité d'une cotisation : {@code datePaiement} si renseignée (paiement remis au
@@ -31,6 +32,9 @@ public enum Ponctualite {
   public static Ponctualite de(Cotisation cotisation) {
     if (cotisation == null || cotisation.getStatut() == CotisationStatut.REFUSE) {
       return NON_DECLAREE;
+    }
+    if (cotisation.getOrigine() == OrigineCotisation.REPRISE) {
+      return REPRISE;
     }
     // Sans date de saisie, la cotisation est en cours de création (réponse avant écriture en base)
     LocalDateTime date =

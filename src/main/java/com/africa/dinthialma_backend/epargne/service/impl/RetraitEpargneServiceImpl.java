@@ -14,6 +14,7 @@ import com.africa.dinthialma_backend.common.util.CsvWriter;
 import com.africa.dinthialma_backend.common.util.FichierExport;
 import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
+import com.africa.dinthialma_backend.contribution.service.interfaces.RepriseService;
 import com.africa.dinthialma_backend.epargne.calcul.SoldeEpargne;
 import com.africa.dinthialma_backend.epargne.codeList.NatureRetrait;
 import com.africa.dinthialma_backend.epargne.codeList.OrigineRetrait;
@@ -40,6 +41,7 @@ import com.africa.dinthialma_backend.tontine.repository.DistributionEvenementiel
 import com.africa.dinthialma_backend.tontine.repository.TontineRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -80,6 +82,7 @@ public class RetraitEpargneServiceImpl implements RetraitEpargneService {
   private final AuditService auditService;
   private final NotificationService notificationService;
   private final WhatsappService whatsappService;
+  private final RepriseService repriseService;
   private final Clock horloge;
 
   // ─── Saisie du gestionnaire ──────────────────────────────────────────────
@@ -106,6 +109,8 @@ public class RetraitEpargneServiceImpl implements RetraitEpargneService {
     LocalDateTime dateRemise = dateRemise(tontine, request.getDateRemise(), maintenant);
     BigDecimal solde = soldeDe(tontineId, membre.getId());
     BigDecimal montant = montant(request, solde);
+    // L'argent sort : les soldes de départ repris du cahier ne bougent plus (B41)
+    repriseService.figerSiOuverte(caller, tontine);
 
     RetraitEpargne retrait =
         retraitRepository.save(
@@ -201,7 +206,8 @@ public class RetraitEpargneServiceImpl implements RetraitEpargneService {
   }
 
   /**
-   * Date réelle de la remise : défaut maintenant, jamais future, pas avant le début de la tontine.
+   * Date réelle de la remise : défaut maintenant, jamais future, pas avant le début de la tontine
+   * (celui du cahier en cas de reprise, B41).
    */
   private static LocalDateTime dateRemise(
       Tontine tontine, LocalDateTime demandee, LocalDateTime maintenant) throws CustomException {
@@ -212,11 +218,14 @@ public class RetraitEpargneServiceImpl implements RetraitEpargneService {
       throw new BadRequestException(
           "La date de remise ne peut pas être dans le futur", ErrorCode.INVALID_PARAMETER);
     }
-    if (tontine.getDateDebut() != null
-        && demandee.isBefore(tontine.getDateDebut().atStartOfDay())) {
+    LocalDate debut =
+        tontine.getDateDebutReelle() != null
+            ? tontine.getDateDebutReelle()
+            : tontine.getDateDebut();
+    if (debut != null && demandee.isBefore(debut.atStartOfDay())) {
       throw new BadRequestException(
           "La date de remise ne peut pas précéder le début de la tontine ("
-              + JOUR.format(tontine.getDateDebut())
+              + JOUR.format(debut)
               + ")",
           ErrorCode.INVALID_PARAMETER);
     }
