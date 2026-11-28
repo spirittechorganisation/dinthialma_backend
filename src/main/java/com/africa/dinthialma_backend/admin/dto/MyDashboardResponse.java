@@ -197,6 +197,12 @@ public class MyDashboardResponse {
             "Demandes de priorité sur le jackpot EN_ATTENTE (à accepter ou refuser). 0 si aucune.",
         example = "0")
     private long prioritesEnAttente;
+
+    @Schema(
+        description =
+            "Demandes de retrait d'épargne à traiter (DEMANDE ou ACCEPTE, B42) ; 0 en rotative",
+        example = "1")
+    private long retraitsEnAttente;
   }
 
   @Schema(description = "Tour ouvert, pas encore remis, qui précède le tour en cours (B33)")

@@ -1,6 +1,8 @@
 package com.africa.dinthialma_backend.me.dto;
 
 import com.africa.dinthialma_backend.contribution.codeList.Ponctualite;
+import com.africa.dinthialma_backend.epargne.codeList.NatureRetrait;
+import com.africa.dinthialma_backend.epargne.codeList.StatutRetrait;
 import com.africa.dinthialma_backend.me.codeList.StatutCotisationDue;
 import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
@@ -155,6 +157,11 @@ public class MeSummaryResponse {
     private BigDecimal soldeReprise;
 
     @Schema(
+        description = "Ma demande de retrait en cours (DEMANDE ou ACCEPTE, B42) ; absente sinon",
+        nullable = true)
+    private RetraitEnCours retraitEnCours;
+
+    @Schema(
         description = "Début du cahier quand la tontine a commencé avant l'application (B41)",
         example = "2026-11-01",
         nullable = true)
@@ -231,6 +238,27 @@ public class MeSummaryResponse {
 
     @Schema(description = "Montant attendu en FCFA", example = "5000", nullable = true)
     private BigDecimal montant;
+  }
+
+  @Schema(description = "Demande de retrait en cours du membre (B42, lot 2)")
+  @Getter
+  @Builder
+  public static class RetraitEnCours {
+
+    @Schema(description = "UUID du retrait (pour l'annuler : DELETE …/retraits/{retraitId})")
+    private UUID retraitId;
+
+    @Schema(description = "DEMANDE (à traiter) ou ACCEPTE (remise à venir)")
+    private StatutRetrait statut;
+
+    @Schema(description = "PARTIEL ou TOTAL")
+    private NatureRetrait nature;
+
+    @Schema(description = "Montant demandé, en FCFA", example = "10000")
+    private BigDecimal montant;
+
+    @Schema(description = "Date de la demande")
+    private LocalDateTime demandeLe;
   }
 
   @Schema(description = "Tour EN_COURS d'une tontine")

@@ -52,6 +52,17 @@ public class RetraitEpargneResponse {
   private LocalDateTime dateAnnulation;
 
   @Schema(
+      description = "Acceptation de la demande par le gestionnaire (B42, lot 2)",
+      nullable = true)
+  private LocalDateTime dateAcceptation;
+
+  @Schema(description = "Motif du refus de la demande (B42, lot 2)", nullable = true)
+  private String motifRefus;
+
+  @Schema(description = "Date du refus de la demande (B42, lot 2)", nullable = true)
+  private LocalDateTime dateRefus;
+
+  @Schema(
       description =
           "Solde du membre après l'opération (création ou annulation) ; absent dans les listes",
       example = "36000",

@@ -62,12 +62,73 @@ public final class RetraitRequests {
     private LocalDateTime dateRemise;
   }
 
-  @Schema(description = "Annulation d'un retrait saisi par erreur")
+  @Schema(
+      description =
+          "Annulation : d'un retrait remis saisi par erreur (gestionnaire, motif obligatoire) ou"
+              + " d'une demande pas encore remise (membre ou gestionnaire, motif facultatif)")
   @Getter
   @Setter
   public static class Annuler {
 
-    @Schema(description = "Motif de l'annulation (obligatoire)", example = "Saisi deux fois")
+    @Schema(
+        description =
+            "Motif de l'annulation : obligatoire pour un retrait remis, facultatif pour une"
+                + " demande",
+        example = "Saisi deux fois",
+        nullable = true)
+    @Size(max = 500, message = "Motif trop long (500 caractères max)")
+    private String motif;
+  }
+
+  @Schema(description = "Demande de retrait par le membre lui-même (B42, lot 2)")
+  @Getter
+  @Setter
+  public static class Demander {
+
+    @Schema(description = "PARTIEL (montant obligatoire) ou TOTAL (tout le solde)")
+    @NotNull(message = "nature est obligatoire")
+    private NatureRetrait nature;
+
+    @Schema(
+        description = "Montant demandé en francs entiers (PARTIEL) ; ignoré pour un retrait TOTAL",
+        example = "10000",
+        nullable = true)
+    @Positive(message = "Le montant doit être positif")
+    private BigDecimal montant;
+
+    @Schema(description = "Motif (optionnel), visible du gestionnaire", example = "Frais médicaux")
+    @Size(max = 500, message = "Motif trop long (500 caractères max)")
+    private String motif;
+  }
+
+  @Schema(description = "Remise au membre d'une demande de retrait (B42, lot 2)")
+  @Getter
+  @Setter
+  public static class Remettre {
+
+    @Schema(description = "Moyen de remise (code list METHODE_PAIEMENT)", example = "WAVE")
+    @NotBlank(message = "methodePaiement est obligatoire")
+    @Size(max = 50, message = "methodePaiement trop long (50 caractères max)")
+    private String methodePaiement;
+
+    @Schema(description = "Référence de la transaction (Wave, OM…)", nullable = true)
+    @Size(max = 100, message = "Référence trop longue (100 caractères max)")
+    private String referenceTransaction;
+
+    @Schema(
+        description =
+            "Date réelle de la remise (heure de Dakar), au plus maintenant ; défaut : maintenant",
+        example = "2026-11-28T17:30:00",
+        nullable = true)
+    private LocalDateTime dateRemise;
+  }
+
+  @Schema(description = "Refus d'une demande de retrait (B42, lot 2)")
+  @Getter
+  @Setter
+  public static class Refuser {
+
+    @Schema(description = "Motif du refus, transmis au membre", example = "Caisse vide ce mois")
     @NotBlank(message = "motif est obligatoire")
     @Size(max = 500, message = "Motif trop long (500 caractères max)")
     private String motif;

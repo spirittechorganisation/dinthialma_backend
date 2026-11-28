@@ -176,6 +176,10 @@ public final class ResponseMessageConstants {
   public static final String RETRAIT_LIST_SUCCESS = "Retraits récupérés avec succès";
   public static final String RETRAIT_CANCELLED = "Retrait annulé";
   public static final String RETRAIT_NOT_FOUND = "Retrait introuvable";
+  public static final String RETRAIT_DEMANDE = "Demande de retrait envoyée";
+  public static final String RETRAIT_ACCEPTE = "Demande de retrait acceptée";
+  public static final String RETRAIT_REMIS = "Retrait remis";
+  public static final String RETRAIT_REFUSE = "Demande de retrait refusée";
   public static final String REPRISE_SUCCESS = "Reprise récupérée avec succès";
   public static final String REPRISE_UPDATED = "Soldes de départ enregistrés";
   public static final String REPRISE_FIGEE = "Reprise figée";

@@ -27,6 +27,9 @@ import com.africa.dinthialma_backend.contribution.mapper.CotisationMapper;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
 import com.africa.dinthialma_backend.contribution.service.interfaces.CotisationService;
 import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
+import com.africa.dinthialma_backend.epargne.codeList.NatureRetrait;
+import com.africa.dinthialma_backend.epargne.codeList.StatutRetrait;
+import com.africa.dinthialma_backend.epargne.entity.RetraitEpargne;
 import com.africa.dinthialma_backend.epargne.repository.RetraitEpargneRepository;
 import com.africa.dinthialma_backend.jackpot.service.interfaces.PrioriteJackpotService;
 import com.africa.dinthialma_backend.me.codeList.ModeActivite;
@@ -891,6 +894,37 @@ class MeServiceImplTest {
 
       assertThat(ligne.getSoldeReprise()).isEqualByComparingTo("42000");
       assertThat(ligne.getDateDebutReelle()).isEqualTo(LocalDate.of(2026, 11, 1));
+      assertThat(ligne.getRetraitEnCours()).isNull();
+    }
+
+    @Test
+    @DisplayName("B42 lot 2 : ma demande de retrait en cours dans le résumé")
+    void retraitEnCours() throws Exception {
+      Tontine epargne = Fixtures.tontine(gestionnaire);
+      epargne.setTontineType(TontineType.EVENEMENTIELLE);
+      TontineMembre membre = Fixtures.membre(epargne, moi, 1);
+      mesAdhesions(membre);
+      RetraitEpargne demande =
+          RetraitEpargne.builder()
+              .id(UUID.randomUUID())
+              .tontine(epargne)
+              .membre(membre)
+              .nature(NatureRetrait.PARTIEL)
+              .montant(new BigDecimal("10000"))
+              .statut(StatutRetrait.DEMANDE)
+              .createdAt(LocalDateTime.of(2026, 11, 28, 9, 0))
+              .build();
+      when(retraitRepository.findByMembre_IdInAndStatutInAndDeletedAtIsNull(anyList(), anyList()))
+          .thenReturn(List.of(demande));
+
+      MeSummaryResponse.RetraitEnCours enCours =
+          service.getSummary(kc).getTontines().get(0).getRetraitEnCours();
+
+      assertThat(enCours.getRetraitId()).isEqualTo(demande.getId());
+      assertThat(enCours.getStatut()).isEqualTo(StatutRetrait.DEMANDE);
+      assertThat(enCours.getNature()).isEqualTo(NatureRetrait.PARTIEL);
+      assertThat(enCours.getMontant()).isEqualByComparingTo("10000");
+      assertThat(enCours.getDemandeLe()).isEqualTo(LocalDateTime.of(2026, 11, 28, 9, 0));
     }
   }
 }

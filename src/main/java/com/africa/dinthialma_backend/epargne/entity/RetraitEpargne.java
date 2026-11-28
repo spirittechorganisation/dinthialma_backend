@@ -84,6 +84,25 @@ public class RetraitEpargne extends BaseEntity {
   @JoinColumn(name = "traite_par")
   private User traitePar;
 
+  /** Gestionnaire qui a accepté la demande du membre (B42, lot 2), avant la remise. */
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "accepte_par")
+  private User acceptePar;
+
+  @Column(name = "date_acceptation")
+  private LocalDateTime dateAcceptation;
+
+  /** Motif du refus de la demande par le gestionnaire (B42, lot 2). */
+  @Column(name = "motif_refus", length = 500)
+  private String motifRefus;
+
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "refuse_par")
+  private User refusePar;
+
+  @Column(name = "date_refus")
+  private LocalDateTime dateRefus;
+
   @Column(name = "motif_annulation", length = 500)
   private String motifAnnulation;
 

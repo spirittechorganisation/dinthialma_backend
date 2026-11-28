@@ -21,6 +21,8 @@ import com.africa.dinthialma_backend.contribution.repository.CotisationSpecifica
 import com.africa.dinthialma_backend.contribution.service.interfaces.CotisationService;
 import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
 import com.africa.dinthialma_backend.epargne.calcul.SoldeEpargne;
+import com.africa.dinthialma_backend.epargne.codeList.StatutRetrait;
+import com.africa.dinthialma_backend.epargne.entity.RetraitEpargne;
 import com.africa.dinthialma_backend.epargne.repository.RetraitEpargneRepository;
 import com.africa.dinthialma_backend.jackpot.service.interfaces.PrioriteJackpotService;
 import com.africa.dinthialma_backend.me.codeList.ModeActivite;
@@ -163,7 +165,8 @@ public class MeServiceImpl implements MeService {
       Map<UUID, List<Cotisation>> cotisationsEnCoursParMembre,
       Map<UUID, List<Object[]>> aRegulariserParMembre,
       Map<UUID, BigDecimal> retraitsParMembre,
-      Map<UUID, BigDecimal> repriseParMembre) {}
+      Map<UUID, BigDecimal> repriseParMembre,
+      Map<UUID, RetraitEpargne> retraitEnCoursParMembre) {}
 
   private AgregatsSummary chargerAgregats(List<TontineMembre> memberships) {
     List<UUID> membreIds = memberships.stream().map(TontineMembre::getId).toList();
@@ -204,7 +207,12 @@ public class MeServiceImpl implements MeService {
         retraitRepository.sumRemisGroupByMembreIn(membreIds).stream()
             .collect(Collectors.toMap(row -> (UUID) row[0], row -> (BigDecimal) row[1])),
         cotisationRepository.sumRepriseByMembreIds(membreIds).stream()
-            .collect(Collectors.toMap(row -> (UUID) row[0], row -> (BigDecimal) row[1])));
+            .collect(Collectors.toMap(row -> (UUID) row[0], row -> (BigDecimal) row[1])),
+        retraitRepository
+            .findByMembre_IdInAndStatutInAndDeletedAtIsNull(
+                membreIds, List.of(StatutRetrait.DEMANDE, StatutRetrait.ACCEPTE))
+            .stream()
+            .collect(Collectors.toMap(r -> r.getMembre().getId(), r -> r, (a, b) -> a)));
   }
 
   /**
@@ -309,6 +317,7 @@ public class MeServiceImpl implements MeService {
         .solde(retire != null ? SoldeEpargne.solde(totalValide, retire) : null)
         .soldeLe(m.getSoldeLe())
         .soldeReprise(agregats.repriseParMembre().get(m.getId()))
+        .retraitEnCours(retraitEnCours(agregats.retraitEnCoursParMembre().get(m.getId())))
         .dateDebutReelle(t.getDateDebutReelle())
         .totalJackpotsRecus(jackpots != null ? (BigDecimal) jackpots[1] : BigDecimal.ZERO)
         .nombreJackpotsRecus(jackpots != null ? (Long) jackpots[2] : 0L)
@@ -324,6 +333,20 @@ public class MeServiceImpl implements MeService {
                 cycle,
                 agregats.cotisationsEnCoursParMembre().getOrDefault(m.getId(), List.of())))
         .gestionnaire(gestionnaire(t.getCreePar()))
+        .build();
+  }
+
+  /** Demande de retrait en cours du membre (B42, lot 2) ; null sinon. */
+  private static MeSummaryResponse.RetraitEnCours retraitEnCours(RetraitEpargne retrait) {
+    if (retrait == null) {
+      return null;
+    }
+    return MeSummaryResponse.RetraitEnCours.builder()
+        .retraitId(retrait.getId())
+        .statut(retrait.getStatut())
+        .nature(retrait.getNature())
+        .montant(retrait.getMontant())
+        .demandeLe(retrait.getCreatedAt())
         .build();
   }
 
