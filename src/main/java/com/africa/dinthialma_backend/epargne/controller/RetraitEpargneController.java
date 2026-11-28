@@ -33,6 +33,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -98,6 +99,97 @@ public class RetraitEpargneController {
         .body(new CustomResponse(SUCCESS, 201, ResponseMessageConstants.RETRAIT_CREATED, r));
   }
 
+  @PostMapping("/retraits")
+  @Operation(
+      summary = "Demander un retrait (membre)",
+      description =
+          "🔒 Membre de la tontine, pour lui-même (B42, lot 2). Mêmes règles que la saisie :"
+              + " événementielle ACTIVE ou SUSPENDUE avant la distribution finale, règle `LIBRE`,"
+              + " membre non soldé, `PARTIEL` ≤ solde (francs entiers), `TOTAL` = tout le solde."
+              + " Créé **DEMANDE** ; une seule demande en cours par membre"
+              + " (`RETRAIT_DEJA_EN_COURS`). Gestionnaire prévenu (`RETRAIT_DEMANDE`, in-app +"
+              + " WhatsApp).")
+  @ApiResponses({
+    @ApiResponse(
+        responseCode = "201",
+        description = "Demande créée (`soldeRestant` = solde actuel)",
+        content = @Content(schema = @Schema(implementation = RetraitEpargneResponse.class))),
+    @ApiResponse(
+        responseCode = "400",
+        description =
+            "`RETRAIT_NON_DISPONIBLE`, `RETRAIT_INTERDIT`, `MEMBRE_SOLDE`,"
+                + " `RETRAIT_SOLDE_INSUFFISANT` (`data.solde`), `INVALID_PARAMETER`"),
+    @ApiResponse(responseCode = "403", description = "Pas membre de la tontine"),
+    @ApiResponse(responseCode = "409", description = "`RETRAIT_DEJA_EN_COURS`"),
+  })
+  public ResponseEntity<CustomResponse> demander(
+      @PathVariable UUID tontineId,
+      @RequestBody @Valid RetraitRequests.Demander request,
+      HttpServletRequest httpRequest)
+      throws CustomException {
+    RetraitEpargneResponse r =
+        retraitService.demander(headerParser.extractKeycloakId(httpRequest), tontineId, request);
+    return ResponseEntity.status(HttpStatus.CREATED)
+        .body(new CustomResponse(SUCCESS, 201, ResponseMessageConstants.RETRAIT_DEMANDE, r));
+  }
+
+  @PutMapping("/retraits/{retraitId}/accepter")
+  @Operation(
+      summary = "Accepter une demande de retrait",
+      description =
+          "🔒 Rôles : créateur de la tontine, SUPER_ADMIN. `DEMANDE` → `ACCEPTE` (facultatif : la"
+              + " demande peut être remise directement). Membre prévenu (`RETRAIT_ACCEPTE`, in-app"
+              + " + WhatsApp). Sinon `RETRAIT_NOT_PENDING`.")
+  public ResponseEntity<CustomResponse> accepter(
+      @PathVariable UUID tontineId, @PathVariable UUID retraitId, HttpServletRequest httpRequest)
+      throws CustomException {
+    RetraitEpargneResponse r =
+        retraitService.accepter(headerParser.extractKeycloakId(httpRequest), tontineId, retraitId);
+    return ResponseEntity.ok(
+        new CustomResponse(SUCCESS, OK, ResponseMessageConstants.RETRAIT_ACCEPTE, r));
+  }
+
+  @PutMapping("/retraits/{retraitId}/remettre")
+  @Operation(
+      summary = "Remettre une demande de retrait",
+      description =
+          "🔒 Rôles : créateur de la tontine, SUPER_ADMIN. `DEMANDE` ou `ACCEPTE` → `REMIS`, avec"
+              + " `methodePaiement` (+ référence, `dateRemise` facultatives). Mêmes contrôles que"
+              + " la saisie directe au moment de la remise : solde revérifié, un `TOTAL` porte sur"
+              + " tout le solde à cette date et rend le membre soldé ; reprise d'un cahier figée."
+              + " Membre prévenu (`RETRAIT_REMIS`).")
+  public ResponseEntity<CustomResponse> remettre(
+      @PathVariable UUID tontineId,
+      @PathVariable UUID retraitId,
+      @RequestBody @Valid RetraitRequests.Remettre request,
+      HttpServletRequest httpRequest)
+      throws CustomException {
+    RetraitEpargneResponse r =
+        retraitService.remettreDemande(
+            headerParser.extractKeycloakId(httpRequest), tontineId, retraitId, request);
+    return ResponseEntity.ok(
+        new CustomResponse(SUCCESS, OK, ResponseMessageConstants.RETRAIT_REMIS, r));
+  }
+
+  @PutMapping("/retraits/{retraitId}/refuser")
+  @Operation(
+      summary = "Refuser une demande de retrait",
+      description =
+          "🔒 Rôles : créateur de la tontine, SUPER_ADMIN. `DEMANDE` ou `ACCEPTE` → `REFUSE`,"
+              + " `motif` obligatoire, transmis au membre (`RETRAIT_REFUSE`, in-app + WhatsApp).")
+  public ResponseEntity<CustomResponse> refuser(
+      @PathVariable UUID tontineId,
+      @PathVariable UUID retraitId,
+      @RequestBody @Valid RetraitRequests.Refuser request,
+      HttpServletRequest httpRequest)
+      throws CustomException {
+    RetraitEpargneResponse r =
+        retraitService.refuser(
+            headerParser.extractKeycloakId(httpRequest), tontineId, retraitId, request);
+    return ResponseEntity.ok(
+        new CustomResponse(SUCCESS, OK, ResponseMessageConstants.RETRAIT_REFUSE, r));
+  }
+
   @GetMapping("/retraits")
   @Operation(
       summary = "Lister les retraits",
@@ -140,12 +232,13 @@ public class RetraitEpargneController {
 
   @DeleteMapping("/retraits/{retraitId}")
   @Operation(
-      summary = "Annuler un retrait saisi par erreur",
+      summary = "Annuler une demande, ou un retrait remis saisi par erreur",
       description =
-          "🔒 Rôles : créateur de la tontine, SUPER_ADMIN. Corps `{motif}` obligatoire. Le retrait"
-              + " passe **ANNULE** ; un retrait total annulé rend le membre non soldé. Impossible"
-              + " après la distribution finale, ou sur un retrait partiel tant que le membre est"
-              + " soldé (`RETRAIT_NON_ANNULABLE`).")
+          "🔒 Demande en cours (`DEMANDE`, `ACCEPTE`) : le membre lui-même ou le gestionnaire,"
+              + " `{motif}` facultatif. Retrait remis : créateur de la tontine, SUPER_ADMIN,"
+              + " `{motif}` obligatoire ; un retrait total annulé rend le membre non soldé ;"
+              + " impossible après la distribution finale, ou sur un retrait partiel tant que le"
+              + " membre est soldé (`RETRAIT_NON_ANNULABLE`). Le retrait passe **ANNULE**.")
   @ApiResponses({
     @ApiResponse(
         responseCode = "200",

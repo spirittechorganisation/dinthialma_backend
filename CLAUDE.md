@@ -85,7 +85,7 @@
 | `/{id}/suspendre` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 ACTIVE → SUSPENDUE |
 | `/{id}/cloturer` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 ACTIVE/SUSPENDUE → TERMINEE (B33), irréversible ; points en suspens (tours non remis, gagnants à désigner, retards, compléments, paiements à valider) → 409 `TONTINE_CLOTURE_A_CONFIRMER` avec le détail dans `data`, puis corps `forcer: true` ; BROUILLON ou déjà TERMINEE → 400 `TONTINE_NON_CLOTURABLE` ; membres actifs notifiés (`TONTINE_CLOTUREE`) |
 | `/{id}/ordre-beneficiaire` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 ROTATIVE BROUILLON/ACTIVE/SUSPENDUE ; effet à la prochaine clôture ; vers ROTATION/ALEATOIRE refusé si un tour attend ses gagnants (409 `DESIGNATION_EN_ATTENTE`) ; membres actifs notifiés (`ORDRE_BENEFICIAIRE_MODIFIE`) |
-| `/{id}/reglages` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 réglages modifiables à tout moment, tontine non TERMINEE : `regleRetrait` (B42, événementielle seulement, sinon `RETRAIT_NON_DISPONIBLE`) ; `modeRemise` (rotative seulement) (option de remise par défaut, effet aux prochaines remises ; `CAISSE` → 400 `MODE_REMISE_INDISPONIBLE`) ; `ouvertureTours` `A_LA_DATE`/`A_LA_REMISE` (B33 lot 3) ; `remiseAutomatique` (rotative seulement, sinon `REMISE_AUTOMATIQUE_NON_DISPONIBLE`) ; audité |
+| `/{id}/reglages` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 réglages modifiables à tout moment, tontine non TERMINEE : `regleRetrait` (B42, événementielle seulement, sinon `RETRAIT_NON_DISPONIBLE` ; déclarée à la création, modifiable en BROUILLON seulement depuis B56, sinon `REGLE_RETRAIT_NON_MODIFIABLE`) ; `modeRemise` (rotative seulement) (option de remise par défaut, effet aux prochaines remises ; `CAISSE` → 400 `MODE_REMISE_INDISPONIBLE`) ; `ouvertureTours` `A_LA_DATE`/`A_LA_REMISE` (B33 lot 3) ; `remiseAutomatique` (rotative seulement, sinon `REMISE_AUTOMATIQUE_NON_DISPONIBLE`) ; audité |
 | `/{id}/distribution` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 répartition finale ÉVÉNEMENTIELLE relue (B51) : lignes (`montantCotise`, `montantCommission`, `montantRetire`, `montantNet`, `statutMembre`) + totaux + `dateDistribution` ; ¹membre : sa ligne seulement ; rotative → 400 ; pas encore distribuée → 404 `DISTRIBUTION_NON_FAITE` |
 | `/{id}/echeance` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 jour / heure d'échéance et rappels (B26), tontine non TERMINEE ; tours pas encore commencés replanifiés, tour en cours inchangé ; membres actifs notifiés (`REGLES_MODIFIEES`) |
 
@@ -125,14 +125,18 @@
 | `/{cycleId}/cloturer` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 EN_COURS → TERMINE, calcul jackpot + commissions ; B33 : corps facultatif `modeRemise` (défaut = réglage de la tontine) ; `ATTENDRE` avec un manque → 409 `REMISE_JACKPOT_INCOMPLETE` ; `CAISSE`, ou `AVANCE_COMMISSION` que la commission ne couvre pas → 400 `MODE_REMISE_INDISPONIBLE` |
 | `/{cycleId}/beneficiaire` | PATCH | ❌ | ❌ | ✅² | ✅ | 🔒 ordreBeneficiaire MANUEL ou HYBRIDE + cycle TERMINE sans gagnant ; `membreIds` vide = tirage aléatoire de `nombreGagnants` (priorités accordées servies d'abord) ; refuse doublons, membres non ACTIF et membres `aRecuJackpot` |
 
-### 💵 Retraits d'épargne (`/v1/tontines/{tontineId}`, B42 lot 1)
+### 💵 Retraits d'épargne (`/v1/tontines/{tontineId}`, B42 lots 1–2)
 
 | Endpoint | Méthode | USER | MEMBER | ADMIN | SUPER_ADMIN | Notes |
 |----------|---------|------|--------|-------|-------------|-------|
 | `/retraits/admin` | POST | ❌ | ❌ | ✅² | ✅ | 🔒 retrait déjà remis → `REMIS` ; événementielle ACTIVE/SUSPENDUE non distribuée (`RETRAIT_NON_DISPONIBLE`), règle `LIBRE` (`RETRAIT_INTERDIT`) ; `PARTIEL` ≤ solde (`RETRAIT_SOLDE_INSUFFISANT`, `data.solde`) ; `TOTAL` = tout le solde → membre soldé (`soldeLe`, `MEMBRE_SOLDE` ensuite), refusé tant que des cotisations EN_ATTENTE/EN_RETARD restent (`RETRAIT_COTISATIONS_EN_ATTENTE`) ; `dateRemise` passée permise (≥ début de la tontine) ; `RETRAIT_REMIS` sauf report de plus de 24 h |
-| `/retraits` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 `?membreId=&statut=` (multi) ; ¹les siens seulement ; tri `dateRemise` DESC |
+| `/retraits` | POST | ❌ | ✅¹ | ❌ | ❌ | 🔒 demande du membre pour lui-même (lot 2) → `DEMANDE`, origine MEMBRE ; mêmes règles que la saisie ; une seule en cours (409 `RETRAIT_DEJA_EN_COURS`) ; `RETRAIT_DEMANDE` au gestionnaire (in-app + WhatsApp `JACKPOT`) |
+| `/retraits/{retraitId}/accepter` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 `DEMANDE` → `ACCEPTE` (facultatif) ; `RETRAIT_ACCEPTE` au membre (in-app + WhatsApp) ; `RETRAIT_NOT_PENDING` |
+| `/retraits/{retraitId}/remettre` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 `DEMANDE`/`ACCEPTE` → `REMIS` (`methodePaiement`, référence, `dateRemise`) : contrôles de la saisie au moment de la remise, total = tout le solde à cette date, reprise figée ; `RETRAIT_REMIS` |
+| `/retraits/{retraitId}/refuser` | PUT | ❌ | ❌ | ✅² | ✅ | 🔒 `DEMANDE`/`ACCEPTE` → `REFUSE`, `motif` obligatoire transmis au membre (`RETRAIT_REFUSE`, in-app + WhatsApp) |
+| `/retraits` | GET | ❌ | ✅¹ | ✅² | ✅ | 🔒 `?membreId=&statut=` (multi) ; ¹les siens seulement ; tri `dateRemise` DESC (demandes non remises en tête) |
 | `/retraits/export` | GET | ❌ | ❌ | ✅² | ✅ | 🔒 CSV de tous les retraits |
-| `/retraits/{retraitId}` | DELETE | ❌ | ❌ | ✅² | ✅ | 🔒 corps `{motif}` obligatoire → `ANNULE` ; total annulé = membre plus soldé ; `RETRAIT_NON_ANNULABLE` (déjà annulé, distribution faite, partiel d'un membre soldé) |
+| `/retraits/{retraitId}` | DELETE | ❌ | ✅¹ (sa demande) | ✅² | ✅ | 🔒 → `ANNULE` ; demande en cours : le membre ou le gestionnaire, `{motif}` facultatif ; retrait remis : gestionnaire, `{motif}` obligatoire (`VALIDATION_ERROR`), total annulé = membre plus soldé ; `RETRAIT_NON_ANNULABLE` (déjà annulé, distribution faite, partiel d'un membre soldé) |
 | `/membres/{membreId}/solde` | GET | ❌ | ✅¹ (le sien) | ✅² | ✅ | 🔒 `totalCotiseValide`, `totalRetire`, `solde`, `soldeLe` |
 
 ### 📒 Reprise d'une tontine commencée (`/v1/tontines/{tontineId}/reprise`, B41 lot 1)
@@ -177,17 +181,17 @@
 | `/dashboard/users/{id}/enable` | POST | ❌ | ✅ | Réactiver un compte |
 | `/dashboard/users/{id}/roles` | PUT | ❌ | ✅ | Modifier les rôles |
 | `/dashboard/contributions` | GET | ❌ | ✅ | Toutes cotisations (pageable, filtres cumulables `?statut=` `?tontineId=`) |
-| `/my-dashboard` | GET | ✅ | ✅ | Métriques de l'admin pour ses tontines (`tontines` = `PagedModel`) + agrégats globaux : `nombreTontinesGerees`, `montantTotalValide`, `totalMembres`, `totalCotisationsEnAttente/EnRetard`, `totalDemandesEnAttente`, `totalCollecteToursEnCours`, `totalAttenduToursEnCours` ; par tontine : `gagnantsADesigner`, `demandesEnAttente`, `prioritesEnAttente`, `toursARemettre` (tours EN_COURS antérieurs au tour en cours, B33 lot 3) + `cycleEnCours` (le plus récent des tours EN_COURS ; `montantCollecte`, `montantEnAttente`, `montantAttendu` = `montantJackpotPrevu` sur le tour complet, `tousPayes`, `nombreEcheances`, `numeroEcheanceCourante`, `membresAyantPaye` / `membresEnAttente` sur l'échéance courante, `membresActifs`) (B32) |
+| `/my-dashboard` | GET | ✅ | ✅ | Métriques de l'admin pour ses tontines (`tontines` = `PagedModel`) + agrégats globaux : `nombreTontinesGerees`, `montantTotalValide`, `totalMembres`, `totalCotisationsEnAttente/EnRetard`, `totalDemandesEnAttente`, `totalCollecteToursEnCours`, `totalAttenduToursEnCours` ; par tontine : `gagnantsADesigner`, `demandesEnAttente`, `prioritesEnAttente`, `retraitsEnAttente` (B42 lot 2), `toursARemettre` (tours EN_COURS antérieurs au tour en cours, B33 lot 3) + `cycleEnCours` (le plus récent des tours EN_COURS ; `montantCollecte`, `montantEnAttente`, `montantAttendu` = `montantJackpotPrevu` sur le tour complet, `tousPayes`, `nombreEcheances`, `numeroEcheanceCourante`, `membresAyantPaye` / `membresEnAttente` sur l'échéance courante, `membresActifs`) (B32) |
 
 ### 🙋 Mon espace (`/v1/me`)
 
 | Endpoint | Méthode | USER | MEMBER | ADMIN | SUPER_ADMIN | Notes |
 |----------|---------|------|--------|-------|-------------|-------|
-| `/summary` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 résumé « Je cotise » : par tontine où je cotise (membership, totaux, tours, tour EN_COURS, `cotisationDue` A_PAYER/EN_ATTENTE/VALIDE, `echeancesARegulariser` (B33 : échéances impayées de tours remis), gestionnaire) + totaux et jackpots reçus ; par tontine `totalJackpotsRecus` / `nombreJackpotsRecus` (0 si rien ; en EVENEMENTIELLE = part de la distribution finale) ; liste non paginée |
+| `/summary` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 résumé « Je cotise » : par tontine où je cotise (membership, totaux, tours, tour EN_COURS, `cotisationDue` A_PAYER/EN_ATTENTE/VALIDE, `echeancesARegulariser` (B33 : échéances impayées de tours remis), gestionnaire) + totaux et jackpots reçus ; `soldeReprise` (absent sans reprise) et `dateDebutReelle` (B41) ; `retraitEnCours` (ma demande DEMANDE / ACCEPTE, B42 lot 2) ; par tontine `totalJackpotsRecus` / `nombreJackpotsRecus` (0 si rien ; en EVENEMENTIELLE = part de la distribution finale) ; liste non paginée |
 | `/gestion/cotisations` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 paiements de **toutes les tontines que j'ai créées** (file « À valider »), filtres `?statut=` (multi), `?tontineId=`, `?q=` ; pageable |
 | `/gestion/cotisations/valider` | POST | ✅ | ✅ | ✅ | ✅ | 🔒 validation groupée `{cotisationIds}` (1–100) ; chaque cotisation dans sa propre transaction, résultat par id avec `code` d'échec ; toujours 200 |
 | `/jackpots` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 reçus (`nature` JACKPOT \| DISTRIBUTION_FINALE, tri date DESC) + `aVenir` (ROTATION : rang, tour et date estimés ; TIRAGE / CHOIX : sans estimation) |
-| `/activite` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 fil cotisations + jackpots + distributions finales `DISTRIBUTION_RECUE` (UNION native, tri date DESC imposé), `?mode=COTISE\|GERE`, `?tontineId=`, `?type=` (répétable : `?type=A&type=B`), `?statut=` |
+| `/activite` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 fil cotisations + jackpots + distributions finales `DISTRIBUTION_RECUE` + soldes de départ `REPRISE` datés du début du cahier (B41) (UNION native, tri date DESC imposé), `?mode=COTISE\|GERE`, `?tontineId=`, `?type=` (répétable : `?type=A&type=B`), `?statut=` |
 | `/qr` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 mon QR : jeton opaque stable `m_…` + url (pas de téléphone) |
 | `/qr/regenerer` | POST | ✅ | ✅ | ✅ | ✅ | 🔒 nouveau jeton, l'ancien → 404 |
 | `/activite/export` | GET | ✅ | ✅ | ✅ | ✅ | 🔒 export CSV du fil (mêmes filtres), `;` + BOM UTF-8, 10 000 lignes max |
@@ -214,7 +218,7 @@
 | Endpoint | Méthode | Accès | Notes |
 |----------|---------|-------|-------|
 | `/v1/public/config` | GET | 🌐 public | `supportWhatsapp`, `supportEmail`, `versionMinimaleApp` (bloquante), `versionRecommandeeApp` (bandeau) — env `SUPPORT_WHATSAPP`, `SUPPORT_EMAIL`, `APP_VERSION_MINIMALE`, `APP_VERSION_RECOMMANDEE` ; champ absent si non configuré ; versions en SemVer strict `X.Y.Z`, sinon le backend refuse de démarrer |
-| `/v1/tontines/{id}/cotisations/export` | GET | créateur, SUPER_ADMIN | export CSV (`format=csv`, `cycleId`, `statut`) ; colonnes historiques inchangées, puis (B26) `Échéance du tour`, `Ponctualité`, `Payée le`, `Rythme` (libellé lisible) en fin de ligne |
+| `/v1/tontines/{id}/cotisations/export` | GET | créateur, SUPER_ADMIN | export CSV (`format=csv`, `cycleId`, `statut`) ; colonnes historiques inchangées, puis (B26) `Échéance du tour`, `Ponctualité`, `Payée le`, `Rythme` (libellé lisible), puis (B41) `Origine` (déclarée / saisie / reprise du cahier) en fin de ligne |
 | `/v1/code-list/{id}` | DELETE | SUPER_ADMIN | suppression logique ; valeurs système refusées (`CODE_LIST_SYSTEM_VALUE`) ; recréer restaure |
 
 > `GET /v1/qr/{token}` (tout auth) : résout un QR membre → identité sans téléphone + `dansMesTontines` (tontines gérées par l'appelant : membreId, statut, `aPayeCycleEnCours`). Préfixe `t_` réservé aux invitations (B16).
@@ -301,7 +305,7 @@ src/main/java/com/africa/dinthialma_backend/
 │       ├── interfaces/ CotisationService, SuiviTourService, RepriseService
 │       └── impl/       CotisationServiceImpl, SuiviTourServiceImpl, RepriseServiceImpl
 ├── notification/   ✅ SMS (LAfricaMobile) + notifications in-app
-│   ├── codeList/       NotificationType (29 valeurs)
+│   ├── codeList/       NotificationType (32 valeurs)
 │   ├── controller/     NotificationController
 │   ├── dto/            NotificationResponse
 │   ├── entity/         UserNotification
@@ -618,7 +622,9 @@ obligatoire** : sans Docker démarré, le build échoue (les `*IT` ne sont jamai
 
 | V048 | `reprise_tontine_commencee.sql` | B41 : `tontines.date_debut_reelle`, `reprise_figee_le` ; `cotisations.origine` (reprise DECLARATION si enregistrée par le membre, sinon SAISIE ; NOT NULL) |
 
-Prochaine version disponible : **V049**
+| V049 | `demande_retrait_membre.sql` | B42 lot 2 : `retraits_epargne.accepte_par`, `date_acceptation`, `motif_refus`, `refuse_par`, `date_refus` ; index unique partiel une demande en cours (DEMANDE / ACCEPTE) par membre |
+
+Prochaine version disponible : **V050**
 
 ---
 
@@ -770,7 +776,7 @@ Prochaine version disponible : **V049**
 | Marquer tout lu (bulk `@Modifying`) | ✅ | 🔒 tout auth |
 | `notify()` non-bloquant (try/catch interne, jamais de rollback) | ✅ | INFRA |
 
-#### Mapping événements → `NotificationType` (29 valeurs)
+#### Mapping événements → `NotificationType` (32 valeurs)
 
 | Événement | Type | Destinataire |
 |-----------|------|--------------|
@@ -805,6 +811,9 @@ Prochaine version disponible : **V049**
 | Tour rotatif ouvert à sa date (`A_LA_DATE`, B33 lot 3) | `CYCLE_OUVERT` | Membres actifs |
 | Remise automatique impossible à l'échéance (option par défaut inapplicable, B33 lot 3), une fois par tour | `REMISE_AUTO_IMPOSSIBLE` | Gestionnaire |
 | Reprise figée : solde de départ repris du cahier (B41) | `SOLDE_DEPART` | Chaque membre ayant un solde (in-app + WhatsApp `JACKPOT`) |
+| Demande de retrait d'un membre (B42 lot 2) | `RETRAIT_DEMANDE` | Gestionnaire (in-app + WhatsApp `JACKPOT`) |
+| Demande de retrait acceptée (B42 lot 2) | `RETRAIT_ACCEPTE` | Membre (in-app + WhatsApp `JACKPOT`) |
+| Demande de retrait refusée, avec le motif (B42 lot 2) | `RETRAIT_REFUSE` | Membre (in-app + WhatsApp `JACKPOT`) |
 
 ---
 
@@ -1022,7 +1031,9 @@ WhatsApp passe par une méthode de `WhatsappService` rattachée à une famille (
   B51 répartition finale relisible (GET /distribution, cycle, clôture forcée)              ✅
   B42 lot 1 retraits saisis par le gestionnaire, solde, membre soldé, distribution (V044)  ✅
   B41 lot 1 reprise : soldes de départ, tour n° 0, gel, SOLDE_DEPART (V048)               ✅
-  B42 lots 2–3 (demande du membre, règles délai/frais), B41 lots 2–3 (activité, import)   🔲
+  B41 lot 2 : activité REPRISE, colonne Origine de l'export, soldeReprise dans /me/summary ✅
+  B42 lot 2 : demande du membre, accepter / remettre / refuser / annuler (V049)          ✅
+  B42 lot 3 (règles délai/frais, export, activité), B41 lot 3 (import détaillé)        🔲
 ```
 
 ---
@@ -1272,8 +1283,11 @@ chaque membre (`RepriseService`, `PUT /v1/tontines/{id}/reprise`).
   `REPRISE_FIGEE`. Au gel, chaque membre reçoit son solde (`SOLDE_DEPART`, in-app + WhatsApp famille
   `JACKPOT`, active par défaut) pour pouvoir le contester. Aucune notification à la saisie.
 - Retraits (B42) : `dateRemise` acceptée depuis `dateDebutReelle`.
-- **Reste (lots 2–3)** : type `REPRISE` dans `/me/activite`, colonne `Origine` dans l'export CSV,
-  `soldeReprise` dans `/me/summary`, import détaillé membre × jour.
+- **Lot 2 (affichage)** : `/me/activite` type `REPRISE` (libellé « Solde de départ (cahier) … »), daté du
+  début du cahier et non du jour de saisie ; export CSV des cotisations : colonne `Origine` en fin de ligne ;
+  `/me/summary` : `soldeReprise` (déjà inclus dans `totalCotiseValide`, absent sans reprise) et
+  `dateDebutReelle`.
+- **Reste (lot 3)** : import détaillé membre × jour.
 
 ---
 

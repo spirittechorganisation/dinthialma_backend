@@ -4,6 +4,7 @@ import com.africa.dinthialma_backend.auth.entity.User;
 import com.africa.dinthialma_backend.common.audit.AuditService;
 import com.africa.dinthialma_backend.common.constants.ResponseMessageConstants;
 import com.africa.dinthialma_backend.common.exception.BadRequestException;
+import com.africa.dinthialma_backend.common.exception.ConflictException;
 import com.africa.dinthialma_backend.common.exception.CustomException;
 import com.africa.dinthialma_backend.common.exception.ErrorCode;
 import com.africa.dinthialma_backend.common.exception.ForbiddenException;
@@ -47,6 +48,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -62,6 +64,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class RetraitEpargneServiceImpl implements RetraitEpargneService {
 
   private static final String TABLE = "retraits_epargne";
+  private static final String STATUT = "statut";
+
+  /** Demande du membre pas encore remise, refusée ni annulée (B42, lot 2). */
+  private static final List<StatutRetrait> EN_COURS =
+      List.of(StatutRetrait.DEMANDE, StatutRetrait.ACCEPTE);
 
   /** Au-delà, un retrait saisi est un report du cahier : pas de notification rétroactive. */
   private static final int HEURES_NOTIFICATION = 24;
@@ -94,42 +101,84 @@ public class RetraitEpargneServiceImpl implements RetraitEpargneService {
     Tontine tontine = tontine(tontineId);
     assertGestionnaire(caller, tontine);
     verifierRetraitsOuverts(tontine);
-
     TontineMembre membre = membre(tontineId, request.getMembreId());
-    if (membre.getSoldeLe() != null) {
-      throw new BadRequestException(
-          "Ce membre a déjà retiré toute son épargne : annulez son retrait total pour revenir en"
-              + " arrière",
-          ErrorCode.MEMBRE_SOLDE);
-    }
-    if (request.getNature() == NatureRetrait.TOTAL) {
+    return remettre(
+        caller,
+        tontine,
+        membre,
+        null,
+        request.getNature(),
+        request.getMontant(),
+        new Remise(
+            request.getMethodePaiement(),
+            request.getReferenceTransaction(),
+            request.getMotif(),
+            request.getDateRemise()));
+  }
+
+  /** Informations de la remise : moyen, référence, motif, date réelle (null = maintenant). */
+  private record Remise(
+      String methodePaiement, String reference, String motif, LocalDateTime dateDemandee) {}
+
+  /**
+   * Remise de l'argent au membre, saisie directe ({@code demande} null, créée REMIS) ou remise
+   * d'une demande du membre : retraits ouverts, membre non soldé, rien en attente pour un total,
+   * montant ≤ solde ; la reprise d'un cahier est figée (B41) ; membre soldé après un total.
+   */
+  private RetraitEpargneResponse remettre(
+      User caller,
+      Tontine tontine,
+      TontineMembre membre,
+      RetraitEpargne demande,
+      NatureRetrait nature,
+      BigDecimal montantDemande,
+      Remise remise)
+      throws CustomException {
+    verifierRetraitsOuverts(tontine);
+    verifierNonSolde(membre);
+    if (nature == NatureRetrait.TOTAL) {
       verifierRienEnAttente(membre);
     }
     LocalDateTime maintenant = LocalDateTime.now(horloge);
-    LocalDateTime dateRemise = dateRemise(tontine, request.getDateRemise(), maintenant);
-    BigDecimal solde = soldeDe(tontineId, membre.getId());
-    BigDecimal montant = montant(request, solde);
+    LocalDateTime dateRemise = dateRemise(tontine, remise.dateDemandee(), maintenant);
+    BigDecimal solde = soldeDe(tontine.getId(), membre.getId());
+    BigDecimal montant = montant(nature, montantDemande, solde);
     // L'argent sort : les soldes de départ repris du cahier ne bougent plus (B41)
     repriseService.figerSiOuverte(caller, tontine);
 
-    RetraitEpargne retrait =
-        retraitRepository.save(
-            RetraitEpargne.builder()
-                .tontine(tontine)
-                .membre(membre)
-                .nature(request.getNature())
-                .montant(montant)
-                .frais(BigDecimal.ZERO)
-                .statut(StatutRetrait.REMIS)
-                .origine(OrigineRetrait.GESTIONNAIRE)
-                .methodePaiement(request.getMethodePaiement().trim())
-                .referenceTransaction(texte(request.getReferenceTransaction()))
-                .motif(texte(request.getMotif()))
-                .dateRemise(dateRemise)
-                .traitePar(caller)
-                .build());
-    auditService.logCreate(caller, TABLE, retrait.getId());
-    if (request.getNature() == NatureRetrait.TOTAL) {
+    RetraitEpargne retrait;
+    if (demande == null) {
+      retrait =
+          retraitRepository.save(
+              RetraitEpargne.builder()
+                  .tontine(tontine)
+                  .membre(membre)
+                  .nature(nature)
+                  .montant(montant)
+                  .frais(BigDecimal.ZERO)
+                  .statut(StatutRetrait.REMIS)
+                  .origine(OrigineRetrait.GESTIONNAIRE)
+                  .methodePaiement(remise.methodePaiement().trim())
+                  .referenceTransaction(texte(remise.reference()))
+                  .motif(texte(remise.motif()))
+                  .dateRemise(dateRemise)
+                  .traitePar(caller)
+                  .build());
+      auditService.logCreate(caller, TABLE, retrait.getId());
+    } else {
+      retrait = demande;
+      StatutRetrait ancien = retrait.getStatut();
+      retrait.setMontant(montant);
+      retrait.setStatut(StatutRetrait.REMIS);
+      retrait.setMethodePaiement(remise.methodePaiement().trim());
+      retrait.setReferenceTransaction(texte(remise.reference()));
+      retrait.setDateRemise(dateRemise);
+      retrait.setTraitePar(caller);
+      retraitRepository.save(retrait);
+      auditService.log(
+          caller, TABLE, retrait.getId(), STATUT, ancien.name(), StatutRetrait.REMIS.name());
+    }
+    if (nature == NatureRetrait.TOTAL) {
       membre.setSoldeLe(dateRemise);
       membreRepository.save(membre);
       auditService.log(
@@ -142,23 +191,31 @@ public class RetraitEpargneServiceImpl implements RetraitEpargneService {
     }
     log.info(
         "Retrait remis – tontineId={} membreId={} nature={} montant={} date={}",
-        tontineId,
+        tontine.getId(),
         membre.getId(),
-        request.getNature(),
+        nature,
         montant,
         dateRemise);
     return retraitMapper.toResponse(retrait).toBuilder().soldeRestant(soldeRestant).build();
   }
 
+  private static void verifierNonSolde(TontineMembre membre) throws CustomException {
+    if (membre.getSoldeLe() != null) {
+      throw new BadRequestException(
+          "Ce membre a déjà retiré toute son épargne : annulez son retrait total pour revenir en"
+              + " arrière",
+          ErrorCode.MEMBRE_SOLDE);
+    }
+  }
+
   /** Montant retenu : TOTAL = tout le solde ; PARTIEL = montant fourni, en francs, ≤ solde. */
-  private static BigDecimal montant(RetraitRequests.Saisir request, BigDecimal solde)
+  private static BigDecimal montant(NatureRetrait nature, BigDecimal demande, BigDecimal solde)
       throws CustomException {
-    BigDecimal demande = request.getMontant();
     if (demande != null && demande.stripTrailingZeros().scale() > 0) {
       throw new BadRequestException(
           "Le montant s'exprime en francs entiers", ErrorCode.INVALID_PARAMETER);
     }
-    if (request.getNature() == NatureRetrait.TOTAL) {
+    if (nature == NatureRetrait.TOTAL) {
       if (solde.signum() <= 0) {
         throw soldeInsuffisant(solde);
       }
@@ -177,6 +234,223 @@ public class RetraitEpargneServiceImpl implements RetraitEpargneService {
       throw soldeInsuffisant(solde);
     }
     return demande;
+  }
+
+  // ─── Demande du membre (lot 2) ───────────────────────────────────────────
+
+  @Override
+  public RetraitEpargneResponse demander(
+      String keycloakId, UUID tontineId, RetraitRequests.Demander request) throws CustomException {
+    User caller = accessControl.utilisateur(keycloakId);
+    Tontine tontine = tontine(tontineId);
+    TontineMembre membre = monMembership(caller, tontineId);
+    verifierRetraitsOuverts(tontine);
+    verifierNonSolde(membre);
+    if (retraitRepository.existsByMembre_IdAndStatutInAndDeletedAtIsNull(
+        membre.getId(), EN_COURS)) {
+      throw new ConflictException(
+          "Vous avez déjà une demande de retrait en cours sur cette tontine",
+          ErrorCode.RETRAIT_DEJA_EN_COURS);
+    }
+    BigDecimal solde = soldeDe(tontineId, membre.getId());
+    BigDecimal demande = request.getNature() == NatureRetrait.TOTAL ? null : request.getMontant();
+    BigDecimal montant = montant(request.getNature(), demande, solde);
+
+    RetraitEpargne retrait =
+        retraitRepository.save(
+            RetraitEpargne.builder()
+                .tontine(tontine)
+                .membre(membre)
+                .nature(request.getNature())
+                .montant(montant)
+                .frais(BigDecimal.ZERO)
+                .statut(StatutRetrait.DEMANDE)
+                .origine(OrigineRetrait.MEMBRE)
+                .motif(texte(request.getMotif()))
+                .build());
+    auditService.logCreate(caller, TABLE, retrait.getId());
+    notifierDemande(tontine, membre, montant);
+    log.info(
+        "Retrait demandé – tontineId={} membreId={} nature={} montant={}",
+        tontineId,
+        membre.getId(),
+        request.getNature(),
+        montant);
+    return retraitMapper.toResponse(retrait).toBuilder().soldeRestant(solde).build();
+  }
+
+  @Override
+  public RetraitEpargneResponse accepter(String keycloakId, UUID tontineId, UUID retraitId)
+      throws CustomException {
+    User caller = accessControl.utilisateur(keycloakId);
+    Tontine tontine = tontine(tontineId);
+    assertGestionnaire(caller, tontine);
+    RetraitEpargne retrait = retrait(tontineId, retraitId);
+    if (retrait.getStatut() != StatutRetrait.DEMANDE) {
+      throw pasEnCours();
+    }
+    verifierRetraitsOuverts(tontine);
+    retrait.setStatut(StatutRetrait.ACCEPTE);
+    retrait.setAcceptePar(caller);
+    retrait.setDateAcceptation(LocalDateTime.now(horloge));
+    retraitRepository.save(retrait);
+    auditService.log(
+        caller,
+        TABLE,
+        retrait.getId(),
+        STATUT,
+        StatutRetrait.DEMANDE.name(),
+        StatutRetrait.ACCEPTE.name());
+
+    User membre = retrait.getMembre().getUser();
+    String montant = retrait.getMontant().toPlainString();
+    notificationService.notify(
+        membre.getId(),
+        NotificationType.RETRAIT_ACCEPTE,
+        "Demande de retrait acceptée",
+        "Votre demande de retrait de "
+            + montant
+            + " FCFA sur "
+            + tontine.getNom()
+            + " est acceptée : votre gestionnaire vous remettra l'argent.",
+        tontineId,
+        NotificationLiens.membre(retrait.getMembre().getId()));
+    whatsapp(
+        membre.getPhone(),
+        phone -> whatsappService.sendRetraitAccepte(phone, tontine.getNom(), montant));
+    return reponse(retrait);
+  }
+
+  @Override
+  public RetraitEpargneResponse remettreDemande(
+      String keycloakId, UUID tontineId, UUID retraitId, RetraitRequests.Remettre request)
+      throws CustomException {
+    User caller = accessControl.utilisateur(keycloakId);
+    Tontine tontine = tontine(tontineId);
+    assertGestionnaire(caller, tontine);
+    RetraitEpargne retrait = retrait(tontineId, retraitId);
+    if (!EN_COURS.contains(retrait.getStatut())) {
+      throw pasEnCours();
+    }
+    // Retrait total : tout le solde au moment de la remise (des cotisations ont pu être validées)
+    BigDecimal demande = retrait.getNature() == NatureRetrait.TOTAL ? null : retrait.getMontant();
+    return remettre(
+        caller,
+        tontine,
+        retrait.getMembre(),
+        retrait,
+        retrait.getNature(),
+        demande,
+        new Remise(
+            request.getMethodePaiement(),
+            request.getReferenceTransaction(),
+            retrait.getMotif(),
+            request.getDateRemise()));
+  }
+
+  @Override
+  public RetraitEpargneResponse refuser(
+      String keycloakId, UUID tontineId, UUID retraitId, RetraitRequests.Refuser request)
+      throws CustomException {
+    User caller = accessControl.utilisateur(keycloakId);
+    Tontine tontine = tontine(tontineId);
+    assertGestionnaire(caller, tontine);
+    RetraitEpargne retrait = retrait(tontineId, retraitId);
+    if (!EN_COURS.contains(retrait.getStatut())) {
+      throw pasEnCours();
+    }
+    StatutRetrait ancien = retrait.getStatut();
+    String motif = request.getMotif().trim();
+    retrait.setStatut(StatutRetrait.REFUSE);
+    retrait.setMotifRefus(motif);
+    retrait.setRefusePar(caller);
+    retrait.setDateRefus(LocalDateTime.now(horloge));
+    retraitRepository.save(retrait);
+    auditService.log(
+        caller, TABLE, retrait.getId(), STATUT, ancien.name(), StatutRetrait.REFUSE.name());
+
+    User membre = retrait.getMembre().getUser();
+    String montant = retrait.getMontant().toPlainString();
+    notificationService.notify(
+        membre.getId(),
+        NotificationType.RETRAIT_REFUSE,
+        "Demande de retrait refusée",
+        "Votre demande de retrait de "
+            + montant
+            + " FCFA sur "
+            + tontine.getNom()
+            + " est refusée. Motif : "
+            + motif,
+        tontineId,
+        NotificationLiens.membre(retrait.getMembre().getId()));
+    whatsapp(
+        membre.getPhone(),
+        phone -> whatsappService.sendRetraitRefuse(phone, tontine.getNom(), montant, motif));
+    return reponse(retrait);
+  }
+
+  @Override
+  public void annulerDemandesEnCours(User caller, Tontine tontine) {
+    LocalDateTime maintenant = LocalDateTime.now(horloge);
+    for (RetraitEpargne retrait :
+        retraitRepository.findByTontine_IdAndStatutInAndDeletedAtIsNull(
+            tontine.getId(), EN_COURS)) {
+      StatutRetrait ancien = retrait.getStatut();
+      retrait.setStatut(StatutRetrait.ANNULE);
+      retrait.setMotifAnnulation("Distribution finale faite");
+      retrait.setAnnulePar(caller);
+      retrait.setDateAnnulation(maintenant);
+      retraitRepository.save(retrait);
+      auditService.log(
+          caller, TABLE, retrait.getId(), STATUT, ancien.name(), StatutRetrait.ANNULE.name());
+    }
+  }
+
+  /** Demande reçue : le gestionnaire est prévenu (in-app + WhatsApp). */
+  private void notifierDemande(Tontine tontine, TontineMembre membre, BigDecimal montant) {
+    User gestionnaire = tontine.getCreePar();
+    String nom = (membre.getUser().getFirstName() + " " + membre.getUser().getLastName()).trim();
+    String texteMontant = montant.toPlainString();
+    notificationService.notify(
+        gestionnaire.getId(),
+        NotificationType.RETRAIT_DEMANDE,
+        "Demande de retrait",
+        nom + " demande un retrait de " + texteMontant + " FCFA sur " + tontine.getNom() + ".",
+        tontine.getId(),
+        NotificationLiens.membre(membre.getId()));
+    whatsapp(
+        gestionnaire.getPhone(),
+        phone -> whatsappService.sendRetraitDemande(phone, nom, tontine.getNom(), texteMontant));
+  }
+
+  /** Envoi WhatsApp non bloquant, ignoré sans numéro. */
+  private static void whatsapp(String phone, Consumer<String> envoi) {
+    if (phone == null) {
+      return;
+    }
+    try {
+      envoi.accept(phone);
+    } catch (RuntimeException e) {
+      log.warn("Notif WA retrait non envoyée pour {} : {}", phone, e.getMessage());
+    }
+  }
+
+  private static CustomException pasEnCours() {
+    return new BadRequestException(
+        "Ce retrait n'est plus une demande en cours (déjà remis, refusé ou annulé)",
+        ErrorCode.RETRAIT_NOT_PENDING);
+  }
+
+  private RetraitEpargne retrait(UUID tontineId, UUID retraitId) throws CustomException {
+    return retraitRepository
+        .findByIdAndTontine_IdAndDeletedAtIsNull(retraitId, tontineId)
+        .orElseThrow(() -> new NotFoundException(ResponseMessageConstants.RETRAIT_NOT_FOUND));
+  }
+
+  private RetraitEpargneResponse reponse(RetraitEpargne retrait) {
+    return retraitMapper.toResponse(retrait).toBuilder()
+        .soldeRestant(soldeDe(retrait.getTontine().getId(), retrait.getMembre().getId()))
+        .build();
   }
 
   /**
@@ -269,24 +543,36 @@ public class RetraitEpargneServiceImpl implements RetraitEpargneService {
       throws CustomException {
     User caller = accessControl.utilisateur(keycloakId);
     Tontine tontine = tontine(tontineId);
-    assertGestionnaire(caller, tontine);
-    RetraitEpargne retrait =
-        retraitRepository
-            .findByIdAndTontine_IdAndDeletedAtIsNull(retraitId, tontineId)
-            .orElseThrow(() -> new NotFoundException(ResponseMessageConstants.RETRAIT_NOT_FOUND));
-    verifierAnnulable(tontine, retrait);
+    RetraitEpargne retrait = retrait(tontineId, retraitId);
+    boolean gestionnaire = estGestionnaire(caller, tontine);
+    boolean demandeur = retrait.getMembre().getUser().getId().equals(caller.getId());
+    boolean enCours = EN_COURS.contains(retrait.getStatut());
+    // Le membre retire sa propre demande ; un retrait remis ne s'annule que par le gestionnaire
+    if (!gestionnaire && !(demandeur && enCours)) {
+      throw new ForbiddenException(ResponseMessageConstants.TONTINE_ACCESS_DENIED);
+    }
+    String motif = texte(request.getMotif());
+    if (!enCours) {
+      verifierAnnulable(tontine, retrait);
+      if (motif == null) {
+        throw new BadRequestException(
+            "Le motif est obligatoire pour annuler un retrait remis", ErrorCode.VALIDATION_ERROR);
+      }
+    }
 
     StatutRetrait ancien = retrait.getStatut();
     retrait.setStatut(StatutRetrait.ANNULE);
-    retrait.setMotifAnnulation(request.getMotif().trim());
+    retrait.setMotifAnnulation(motif);
     retrait.setAnnulePar(caller);
     retrait.setDateAnnulation(LocalDateTime.now(horloge));
     retraitRepository.save(retrait);
     auditService.log(
-        caller, TABLE, retrait.getId(), "statut", ancien.name(), StatutRetrait.ANNULE.name());
+        caller, TABLE, retrait.getId(), STATUT, ancien.name(), StatutRetrait.ANNULE.name());
 
     TontineMembre membre = retrait.getMembre();
-    if (retrait.getNature() == NatureRetrait.TOTAL && membre.getSoldeLe() != null) {
+    if (ancien == StatutRetrait.REMIS
+        && retrait.getNature() == NatureRetrait.TOTAL
+        && membre.getSoldeLe() != null) {
       auditService.log(
           caller,
           "tontine_membres",
@@ -298,15 +584,13 @@ public class RetraitEpargneServiceImpl implements RetraitEpargneService {
       membreRepository.save(membre);
     }
     log.info("Retrait annulé – tontineId={} retraitId={}", tontineId, retraitId);
-    return retraitMapper.toResponse(retrait).toBuilder()
-        .soldeRestant(soldeDe(tontineId, membre.getId()))
-        .build();
+    return reponse(retrait);
   }
 
   /**
-   * Annulable : retrait encore actif, distribution finale pas faite ; un partiel ne s'annule pas
-   * tant que le membre est soldé (annuler d'abord le retrait total, sinon le solde redeviendrait
-   * positif pour un membre qui ne cotise plus).
+   * Retrait remis annulable (saisie erronée) : distribution finale pas faite ; un partiel ne
+   * s'annule pas tant que le membre est soldé (annuler d'abord le retrait total, sinon le solde
+   * redeviendrait positif pour un membre qui ne cotise plus). Déjà annulé ou refusé : refusé.
    */
   private void verifierAnnulable(Tontine tontine, RetraitEpargne retrait) throws CustomException {
     if (retrait.getStatut() == StatutRetrait.ANNULE

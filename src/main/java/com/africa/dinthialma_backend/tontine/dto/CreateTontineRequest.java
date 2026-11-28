@@ -4,6 +4,7 @@ import com.africa.dinthialma_backend.tontine.codeList.DeclenchementJackpot;
 import com.africa.dinthialma_backend.tontine.codeList.ModeCycle;
 import com.africa.dinthialma_backend.tontine.codeList.ModeRemise;
 import com.africa.dinthialma_backend.tontine.codeList.OuvertureTours;
+import com.africa.dinthialma_backend.tontine.codeList.RegleRetrait;
 import com.africa.dinthialma_backend.tontine.codeList.TontineType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -134,6 +135,15 @@ public class CreateTontineRequest {
               + " Modifiable à tout moment (PATCH /reglages)",
       example = "A_LA_DATE")
   private OuvertureTours ouvertureTours;
+
+  @Schema(
+      description =
+          "Retrait anticipé (EVENEMENTIELLE, B42/B54) : LIBRE (défaut, l'argent peut être rendu"
+              + " avant la fin) ou INTERDIT (rendu à la distribution finale seulement). Convenue avec"
+              + " les participants : modifiable en BROUILLON seulement. Ignorée pour une rotative"
+              + " (INTERDIT)",
+      example = "LIBRE")
+  private RegleRetrait regleRetrait;
 
   @Schema(
       description =

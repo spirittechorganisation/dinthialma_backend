@@ -120,5 +120,14 @@ public enum NotificationType {
    * Reprise figée (B41) : solde de départ recopié du cahier, pour que le membre puisse le contester
    * (destinataire : chaque membre ayant un solde ; in-app + WhatsApp famille JACKPOT).
    */
-  SOLDE_DEPART
+  SOLDE_DEPART,
+
+  /** Un membre demande un retrait de son épargne (B42, lot 2) (destinataire : gestionnaire). */
+  RETRAIT_DEMANDE,
+
+  /** Demande de retrait acceptée, remise à venir (B42, lot 2) (destinataire : membre). */
+  RETRAIT_ACCEPTE,
+
+  /** Demande de retrait refusée, avec le motif (B42, lot 2) (destinataire : membre). */
+  RETRAIT_REFUSE
 }

@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -652,6 +654,272 @@ class RetraitEpargneServiceImplTest {
       assertThat(captor.getValue().getMethodePaiement()).isEqualTo("CASH");
       assertThat(captor.getValue().getMotif()).isEqualTo("Frais de scolarité");
       assertThat(captor.getValue().getTontine()).isEqualTo(tontine);
+    }
+  }
+
+  @Nested
+  @DisplayName("B42 lot 2 : demande du membre")
+  class DemandeDuMembre {
+
+    private RetraitRequests.Demander demande(NatureRetrait nature, String montant) {
+      RetraitRequests.Demander r = new RetraitRequests.Demander();
+      r.setNature(nature);
+      r.setMontant(montant != null ? new BigDecimal(montant) : null);
+      r.setMotif(" Frais médicaux ");
+      return r;
+    }
+
+    private RetraitRequests.Remettre remise() {
+      RetraitRequests.Remettre r = new RetraitRequests.Remettre();
+      r.setMethodePaiement(" WAVE ");
+      r.setReferenceTransaction("TX-42");
+      return r;
+    }
+
+    private RetraitRequests.Refuser refus(String motif) {
+      RetraitRequests.Refuser r = new RetraitRequests.Refuser();
+      r.setMotif(motif);
+      return r;
+    }
+
+    @Test
+    @DisplayName(
+        "demande partielle : DEMANDE, origine MEMBRE, solde inchangé, gestionnaire prévenu (in-app"
+            + " + WhatsApp)")
+    void demandePartielle() throws Exception {
+      RetraitEpargneResponse r =
+          service.demander(
+              awa.getKeycloakId(), tontine.getId(), demande(NatureRetrait.PARTIEL, "10000"));
+
+      assertThat(r.getStatut()).isEqualTo(StatutRetrait.DEMANDE);
+      assertThat(r.getOrigine()).isEqualTo(OrigineRetrait.MEMBRE);
+      assertThat(r.getMontant()).isEqualByComparingTo("10000");
+      assertThat(r.getMotif()).isEqualTo("Frais médicaux");
+      assertThat(r.getSoldeRestant()).isEqualByComparingTo("46000");
+      assertThat(r.getDateRemise()).isNull();
+      verify(notificationService)
+          .notify(
+              eq(gestionnaire.getId()),
+              eq(NotificationType.RETRAIT_DEMANDE),
+              anyString(),
+              contains("demande un retrait de 10000 FCFA"),
+              eq(tontine.getId()),
+              any());
+      verify(whatsappService)
+          .sendRetraitDemande(gestionnaire.getPhone(), "Awa Test", tontine.getNom(), "10000");
+      verify(repriseService, never()).figerSiOuverte(any(), any());
+    }
+
+    @Test
+    @DisplayName(
+        "demande totale : tout le solde (montant ignoré) ; gestionnaire sans téléphone : pas de"
+            + " WhatsApp")
+    void demandeTotale() throws Exception {
+      gestionnaire.setPhone(null);
+
+      RetraitEpargneResponse r =
+          service.demander(awa.getKeycloakId(), tontine.getId(), demande(NatureRetrait.TOTAL, "1"));
+
+      assertThat(r.getMontant()).isEqualByComparingTo("46000");
+      verify(whatsappService, never()).sendRetraitDemande(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+        "refus de la demande : déjà une en cours (RETRAIT_DEJA_EN_COURS), tiers (403), membre"
+            + " soldé, montant au-delà du solde, règle INTERDIT")
+    void demandeRefusee() {
+      when(retraitRepository.existsByMembre_IdAndStatutInAndDeletedAtIsNull(
+              eq(membreAwa.getId()), any()))
+          .thenReturn(true);
+      code(
+          () ->
+              service.demander(
+                  awa.getKeycloakId(), tontine.getId(), demande(NatureRetrait.PARTIEL, "1000")),
+          ErrorCode.RETRAIT_DEJA_EN_COURS);
+
+      lenient()
+          .when(
+              membreRepository.findByTontine_IdAndUser_IdAndDeletedAtIsNull(
+                  tontine.getId(), etranger.getId()))
+          .thenReturn(Optional.empty());
+      assertThatThrownBy(
+              () ->
+                  service.demander(
+                      etranger.getKeycloakId(),
+                      tontine.getId(),
+                      demande(NatureRetrait.PARTIEL, "1000")))
+          .isInstanceOf(ForbiddenException.class);
+
+      code(
+          () ->
+              service.demander(
+                  binta.getKeycloakId(), tontine.getId(), demande(NatureRetrait.PARTIEL, "50000")),
+          ErrorCode.RETRAIT_SOLDE_INSUFFISANT);
+      membreBinta.setSoldeLe(MAINTENANT);
+      code(
+          () ->
+              service.demander(
+                  binta.getKeycloakId(), tontine.getId(), demande(NatureRetrait.PARTIEL, "1000")),
+          ErrorCode.MEMBRE_SOLDE);
+      tontine.setRegleRetrait(RegleRetrait.INTERDIT);
+      code(
+          () ->
+              service.demander(
+                  binta.getKeycloakId(), tontine.getId(), demande(NatureRetrait.PARTIEL, "1000")),
+          ErrorCode.RETRAIT_INTERDIT);
+      verify(retraitRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName(
+        "accepter : DEMANDE -> ACCEPTE, membre prévenu (in-app + WhatsApp) ; une seconde fois ->"
+            + " RETRAIT_NOT_PENDING ; membre -> 403")
+    void accepter() throws Exception {
+      RetraitEpargne d = retrait(membreAwa, NatureRetrait.PARTIEL, StatutRetrait.DEMANDE);
+
+      RetraitEpargneResponse r = service.accepter(kc, tontine.getId(), d.getId());
+
+      assertThat(r.getStatut()).isEqualTo(StatutRetrait.ACCEPTE);
+      assertThat(r.getDateAcceptation()).isEqualTo(MAINTENANT);
+      assertThat(d.getAcceptePar()).isEqualTo(gestionnaire);
+      verify(notificationService)
+          .notify(
+              eq(awa.getId()),
+              eq(NotificationType.RETRAIT_ACCEPTE),
+              anyString(),
+              anyString(),
+              eq(tontine.getId()),
+              any());
+      verify(whatsappService).sendRetraitAccepte(awa.getPhone(), tontine.getNom(), "10000");
+      code(() -> service.accepter(kc, tontine.getId(), d.getId()), ErrorCode.RETRAIT_NOT_PENDING);
+      assertThatThrownBy(() -> service.accepter(awa.getKeycloakId(), tontine.getId(), d.getId()))
+          .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName(
+        "remettre une demande acceptée : REMIS, moyen et référence, reprise figée, membre prévenu")
+    void remettrePartiel() throws Exception {
+      RetraitEpargne d = retrait(membreAwa, NatureRetrait.PARTIEL, StatutRetrait.ACCEPTE);
+      d.setDateRemise(null);
+
+      RetraitEpargneResponse r = service.remettreDemande(kc, tontine.getId(), d.getId(), remise());
+
+      assertThat(r.getStatut()).isEqualTo(StatutRetrait.REMIS);
+      assertThat(r.getMethodePaiement()).isEqualTo("WAVE");
+      assertThat(r.getReferenceTransaction()).isEqualTo("TX-42");
+      assertThat(r.getDateRemise()).isEqualTo(MAINTENANT);
+      assertThat(r.getSoldeRestant()).isEqualByComparingTo("36000");
+      assertThat(d.getTraitePar()).isEqualTo(gestionnaire);
+      verify(repriseService).figerSiOuverte(gestionnaire, tontine);
+      verify(auditService)
+          .log(gestionnaire, "retraits_epargne", d.getId(), "statut", "ACCEPTE", "REMIS");
+      verify(whatsappService).sendRetraitRemis(awa.getPhone(), tontine.getNom(), "10000", "36000");
+      code(
+          () -> service.remettreDemande(kc, tontine.getId(), d.getId(), remise()),
+          ErrorCode.RETRAIT_NOT_PENDING);
+    }
+
+    @Test
+    @DisplayName(
+        "remettre une demande totale directement : tout le solde à la remise, membre soldé")
+    void remettreTotal() throws Exception {
+      RetraitEpargne d = retrait(membreBinta, NatureRetrait.TOTAL, StatutRetrait.DEMANDE);
+
+      RetraitEpargneResponse r = service.remettreDemande(kc, tontine.getId(), d.getId(), remise());
+
+      assertThat(r.getMontant()).isEqualByComparingTo("42000");
+      assertThat(r.getSoldeRestant()).isEqualByComparingTo("0");
+      assertThat(membreBinta.getSoldeLe()).isEqualTo(MAINTENANT);
+    }
+
+    @Test
+    @DisplayName(
+        "refuser : REFUSE avec motif transmis (in-app + WhatsApp, échec WhatsApp sans effet) ;"
+            + " retrait remis -> RETRAIT_NOT_PENDING")
+    void refuser() throws Exception {
+      RetraitEpargne d = retrait(membreAwa, NatureRetrait.PARTIEL, StatutRetrait.DEMANDE);
+      doThrow(new IllegalStateException("WA indisponible"))
+          .when(whatsappService)
+          .sendRetraitRefuse(any(), any(), any(), any());
+
+      RetraitEpargneResponse r =
+          service.refuser(kc, tontine.getId(), d.getId(), refus(" Caisse vide "));
+
+      assertThat(r.getStatut()).isEqualTo(StatutRetrait.REFUSE);
+      assertThat(r.getMotifRefus()).isEqualTo("Caisse vide");
+      assertThat(r.getDateRefus()).isEqualTo(MAINTENANT);
+      assertThat(d.getRefusePar()).isEqualTo(gestionnaire);
+      verify(notificationService)
+          .notify(
+              eq(awa.getId()),
+              eq(NotificationType.RETRAIT_REFUSE),
+              anyString(),
+              contains("Motif : Caisse vide"),
+              eq(tontine.getId()),
+              any());
+
+      RetraitEpargne remis = retrait(membreAwa, NatureRetrait.PARTIEL, StatutRetrait.REMIS);
+      code(
+          () -> service.refuser(kc, tontine.getId(), remis.getId(), refus("non")),
+          ErrorCode.RETRAIT_NOT_PENDING);
+    }
+
+    @Test
+    @DisplayName(
+        "annuler : le membre retire sa demande sans motif ; pas celle d'un autre ni un retrait"
+            + " remis (403) ; gestionnaire sur un retrait remis sans motif -> VALIDATION_ERROR")
+    void annuler() throws Exception {
+      RetraitEpargne d = retrait(membreAwa, NatureRetrait.PARTIEL, StatutRetrait.DEMANDE);
+
+      RetraitEpargneResponse r =
+          service.annuler(
+              awa.getKeycloakId(), tontine.getId(), d.getId(), new RetraitRequests.Annuler());
+
+      assertThat(r.getStatut()).isEqualTo(StatutRetrait.ANNULE);
+      assertThat(r.getMotifAnnulation()).isNull();
+      assertThat(d.getAnnulePar()).isEqualTo(awa);
+
+      RetraitEpargne autre = retrait(membreBinta, NatureRetrait.PARTIEL, StatutRetrait.DEMANDE);
+      assertThatThrownBy(
+              () ->
+                  service.annuler(
+                      awa.getKeycloakId(),
+                      tontine.getId(),
+                      autre.getId(),
+                      new RetraitRequests.Annuler()))
+          .isInstanceOf(ForbiddenException.class);
+      RetraitEpargne remis = retrait(membreAwa, NatureRetrait.PARTIEL, StatutRetrait.REMIS);
+      assertThatThrownBy(
+              () ->
+                  service.annuler(
+                      awa.getKeycloakId(),
+                      tontine.getId(),
+                      remis.getId(),
+                      new RetraitRequests.Annuler()))
+          .isInstanceOf(ForbiddenException.class);
+      code(
+          () -> service.annuler(kc, tontine.getId(), remis.getId(), new RetraitRequests.Annuler()),
+          ErrorCode.VALIDATION_ERROR);
+    }
+
+    @Test
+    @DisplayName("distribution finale : demandes en cours annulées d'office, auditées")
+    void annulationALaDistribution() {
+      RetraitEpargne d = retrait(membreAwa, NatureRetrait.PARTIEL, StatutRetrait.DEMANDE);
+      RetraitEpargne a = retrait(membreBinta, NatureRetrait.TOTAL, StatutRetrait.ACCEPTE);
+      when(retraitRepository.findByTontine_IdAndStatutInAndDeletedAtIsNull(
+              eq(tontine.getId()), any()))
+          .thenReturn(List.of(d, a));
+
+      service.annulerDemandesEnCours(gestionnaire, tontine);
+
+      assertThat(d.getStatut()).isEqualTo(StatutRetrait.ANNULE);
+      assertThat(a.getStatut()).isEqualTo(StatutRetrait.ANNULE);
+      assertThat(a.getMotifAnnulation()).isEqualTo("Distribution finale faite");
+      verify(auditService)
+          .log(gestionnaire, "retraits_epargne", a.getId(), "statut", "ACCEPTE", "ANNULE");
     }
   }
 }

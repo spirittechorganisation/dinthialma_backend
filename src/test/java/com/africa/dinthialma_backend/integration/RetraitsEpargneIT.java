@@ -316,8 +316,8 @@ class RetraitsEpargneIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "règle INTERDIT, solde insuffisant, rotative, tontine terminée ; règle modifiable dans les"
-          + " réglages")
+      "règle INTERDIT choisie à la création, solde insuffisant, rotative, tontine terminée ;"
+          + " règle figée une fois la tontine active (B54)")
   void refus() {
     Utilisateur g = donnees.inscrire("Gestionnaire");
     String tid = epargne(g, "Épargne règles", 10, null);
@@ -331,9 +331,23 @@ class RetraitsEpargneIT extends AbstractIntegrationTest {
     assertThat(insuffisant.data().path("solde").decimalValue())
         .isEqualByComparingTo(new BigDecimal("3000"));
 
-    TestDataFactory.attendre(
-        api.patch(tontine(tid) + "/reglages", g.jeton(), Map.of("regleRetrait", "INTERDIT")), 200);
-    assertThat(retirer(g, tid, retrait(awa, "PARTIEL", 1000, null)).code())
+    assertThat(
+            api.patch(tontine(tid) + "/reglages", g.jeton(), Map.of("regleRetrait", "INTERDIT"))
+                .code())
+        .isEqualTo("REGLE_RETRAIT_NON_MODIFIABLE");
+    Map<String, Object> interdite = new HashMap<>();
+    interdite.put("tontineType", "EVENEMENTIELLE");
+    interdite.put("frequence", "JOURNALIERE");
+    interdite.put("dateEcheance", LocalDate.now().plusDays(3).toString());
+    interdite.put("regleRetrait", "INTERDIT");
+    String tidInterdit =
+        donnees.creerTontine(g.jeton(), "Épargne sans retrait", interdite).path("id").asText();
+    assertThat(api.get(tontine(tidInterdit), g.jeton()).data().path("regleRetrait").asText())
+        .isEqualTo("INTERDIT");
+    String binta = preInscrire(g, tidInterdit, "Binta");
+    donnees.activer(g.jeton(), tidInterdit);
+    TestDataFactory.attendre(encaisser(g, tidInterdit, cycle(g, tidInterdit, 1), binta, 1000), 201);
+    assertThat(retirer(g, tidInterdit, retrait(binta, "PARTIEL", 1000, null)).code())
         .isEqualTo("RETRAIT_INTERDIT");
 
     String rotative = donnees.creerTontine(g.jeton(), "Rotative").path("id").asText();
@@ -344,8 +358,6 @@ class RetraitsEpargneIT extends AbstractIntegrationTest {
     assertThat(retirer(g, rotative, retrait(awa, "PARTIEL", 1000, null)).code())
         .isEqualTo("RETRAIT_NON_DISPONIBLE");
 
-    TestDataFactory.attendre(
-        api.patch(tontine(tid) + "/reglages", g.jeton(), Map.of("regleRetrait", "LIBRE")), 200);
     TestDataFactory.attendre(
         api.put(tontine(tid) + "/cloturer", g.jeton(), Map.of("forcer", true)), 200);
     assertThat(retirer(g, tid, retrait(awa, "PARTIEL", 1000, null)).code())
@@ -420,5 +432,96 @@ class RetraitsEpargneIT extends AbstractIntegrationTest {
     assertThat(dernier.path("montantJackpot").asInt()).isEqualTo(50000);
     assertThat(dernier.path("montantCommission").asInt()).isEqualTo(2000);
     assertThat(dernier.path("montantNet").asInt()).isEqualTo(18000);
+  }
+
+  private boolean aRecu(Utilisateur u, String type) {
+    JsonNode notifs = api.get("/v1/notifications?size=50", u.jeton()).data().path("content");
+    return StreamSupport.stream(notifs.spliterator(), false)
+        .anyMatch(n -> type.equals(n.path("type").asText()));
+  }
+
+  @Test
+  @DisplayName(
+      "lot 2 : le membre demande, une seule demande à la fois, le gestionnaire accepte puis"
+          + " remet ; refus avec motif ; le membre retire sa demande")
+  void demandeDuMembre() {
+    Utilisateur g = donnees.inscrire("Gestionnaire");
+    Utilisateur awa = donnees.inscrire("Awa");
+    String tontineId = epargne(g, "Epargne demandes", 3, null);
+    String membreId = donnees.ajouterMembre(g.jeton(), tontineId, awa.phone()).path("id").asText();
+    donnees.activer(g.jeton(), tontineId);
+    TestDataFactory.attendre(encaisser(g, tontineId, cycle(g, tontineId, 1), membreId, 10000), 201);
+    String retraits = tontine(tontineId) + "/retraits";
+
+    JsonNode demande =
+        TestDataFactory.attendre(
+                api.post(
+                    retraits,
+                    awa.jeton(),
+                    Map.of("nature", "PARTIEL", "montant", 4000, "motif", "Ordonnance")),
+                201)
+            .data();
+    assertThat(demande.path("statut").asText()).isEqualTo("DEMANDE");
+    assertThat(demande.path("origine").asText()).isEqualTo("MEMBRE");
+    assertThat(aRecu(g, "RETRAIT_DEMANDE")).isTrue();
+    Reponse seconde = api.post(retraits, awa.jeton(), Map.of("nature", "PARTIEL", "montant", 1000));
+    assertThat(seconde.statut()).isEqualTo(409);
+    assertThat(seconde.code()).isEqualTo("RETRAIT_DEJA_EN_COURS");
+
+    JsonNode resume = api.get("/v1/me/summary", awa.jeton()).data().path("tontines").get(0);
+    assertThat(resume.path("retraitEnCours").path("statut").asText()).isEqualTo("DEMANDE");
+    JsonNode tableau =
+        api.get("/v1/admin/my-dashboard", g.jeton()).data().path("tontines").path("content");
+    assertThat(tableau.get(0).path("retraitsEnAttente").asInt()).isEqualTo(1);
+
+    String id = demande.path("id").asText();
+    TestDataFactory.attendre(api.put(retraits + "/" + id + "/accepter", g.jeton(), null), 200);
+    assertThat(aRecu(awa, "RETRAIT_ACCEPTE")).isTrue();
+    JsonNode remis =
+        TestDataFactory.attendre(
+                api.put(
+                    retraits + "/" + id + "/remettre",
+                    g.jeton(),
+                    Map.of("methodePaiement", "WAVE", "referenceTransaction", "TX-1")),
+                200)
+            .data();
+    assertThat(remis.path("statut").asText()).isEqualTo("REMIS");
+    assertThat(remis.path("soldeRestant").asInt()).isEqualTo(6000);
+    assertThat(aRecu(awa, "RETRAIT_REMIS")).isTrue();
+
+    String refusee =
+        TestDataFactory.attendre(api.post(retraits, awa.jeton(), Map.of("nature", "TOTAL")), 201)
+            .data()
+            .path("id")
+            .asText();
+    Reponse sansMotif = api.put(retraits + "/" + refusee + "/refuser", g.jeton(), Map.of());
+    assertThat(sansMotif.statut()).isEqualTo(400);
+    JsonNode refus =
+        TestDataFactory.attendre(
+                api.put(
+                    retraits + "/" + refusee + "/refuser",
+                    g.jeton(),
+                    Map.of("motif", "Attendez la fin du mois")),
+                200)
+            .data();
+    assertThat(refus.path("statut").asText()).isEqualTo("REFUSE");
+    assertThat(aRecu(awa, "RETRAIT_REFUSE")).isTrue();
+
+    String retiree =
+        TestDataFactory.attendre(
+                api.post(retraits, awa.jeton(), Map.of("nature", "PARTIEL", "montant", 1000)), 201)
+            .data()
+            .path("id")
+            .asText();
+    JsonNode annulee =
+        TestDataFactory.attendre(api.delete(retraits + "/" + retiree, awa.jeton(), Map.of()), 200)
+            .data();
+    assertThat(annulee.path("statut").asText()).isEqualTo("ANNULE");
+    assertThat(
+            api.get(tontine(tontineId) + "/membres/" + membreId + "/solde", awa.jeton())
+                .data()
+                .path("solde")
+                .asInt())
+        .isEqualTo(6000);
   }
 }

@@ -23,6 +23,7 @@ import com.africa.dinthialma_backend.contribution.service.interfaces.RepriseServ
 import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
 import com.africa.dinthialma_backend.epargne.calcul.SoldeEpargne;
 import com.africa.dinthialma_backend.epargne.repository.RetraitEpargneRepository;
+import com.africa.dinthialma_backend.epargne.service.interfaces.RetraitEpargneService;
 import com.africa.dinthialma_backend.jackpot.service.interfaces.PrioriteJackpotService;
 import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import com.africa.dinthialma_backend.member.entity.TontineMembre;
@@ -110,6 +111,7 @@ public class CycleServiceImpl implements CycleService {
   private final SuiviTourService suiviTour;
   private final RetraitEpargneRepository retraitRepository;
   private final RepriseService repriseService;
+  private final RetraitEpargneService retraitService;
 
   // ─── Lecture ─────────────────────────────────────────────────────────────
 
@@ -882,6 +884,8 @@ public class CycleServiceImpl implements CycleService {
       }
 
       enregistrerDistribution(tontine, cycle, distribution);
+      // Plus aucun retrait possible : les demandes encore en cours sont annulées (B42)
+      retraitService.annulerDemandesEnCours(caller, tontine);
       notifyFinalDistribution(tontine, distribution);
 
       // Notifications in-app distribution finale (pas aux membres soldés, qui n'ont rien à

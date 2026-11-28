@@ -26,8 +26,9 @@ public class ModifierReglagesRequest {
 
   @Schema(
       description =
-          "Règle de retrait anticipé (B42, événementielle uniquement) : INTERDIT ou LIBRE. Une"
-              + " rotative → 400 RETRAIT_NON_DISPONIBLE.",
+          "Règle de retrait anticipé (B42, événementielle uniquement) : INTERDIT ou LIBRE, en"
+              + " BROUILLON seulement (B54, sinon 400 REGLE_RETRAIT_NON_MODIFIABLE). Une rotative"
+              + " → 400 RETRAIT_NON_DISPONIBLE.",
       example = "LIBRE",
       nullable = true)
   private RegleRetrait regleRetrait;

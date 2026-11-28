@@ -52,14 +52,22 @@
 | B35 | Plusieurs parts par membre (rotatives, groupées si configuré) : parts max par adhérent, personnes requises pour démarrer, retrait encadré par le gestionnaire | Créer, Réglages, Membres, Invitation, Payer, Encaisser, Mes jackpots | P1 (après B33) |
 | S01 | Socle : ponctualité d'une cotisation (à temps / en retard / non déclarée), distincte du statut | Récap tour, Je cotise, Amendes | P1 (prérequis B26/B27) |
 | S02 | Socle : montants en francs entiers, partages exacts (aucun franc perdu) | Clôture, Distribution, Caisses | P1 (prérequis B27/B28/B29) |
-| B41 | Reprise d'une tontine déjà commencée (cahier papier) : soldes d'ouverture, puis import détaillé | Créer, Membres, Fiche, Historique | P1 (conception, voir 7.3) |
-| B42 | Retraits anticipés (épargne événementielle) : solde, retrait total ou partiel, distribution sur le solde | Fiche, Mon espace, À valider, Distribution | P1 (conception, voir 7.3) |
+| B41 | Reprise d'une tontine déjà commencée (cahier papier) : soldes d'ouverture, puis import détaillé | Créer, Membres, Fiche, Historique | P1 — lot 1 **fait** (V048, dans `main`, à mettre en production) ; lot 2 **fait** (branche `feature/b41-lot2-affichage-reprise`, à mettre en production) ; lot 3 import détaillé **à faire** |
+| B42 | Retraits anticipés (épargne événementielle) : solde, retrait total ou partiel, distribution sur le solde | Fiche, Mon espace, À valider, Distribution | P1 — lot 1 **fait** (V044, dans `main`, à mettre en production) ; lot 2 demande du membre **fait** (V049, branche `feature/b41-lot2-affichage-reprise`, à mettre en production) ; lot 3 délai, activité, export **à faire** (frais : voir B56) |
 | B43 | Correctif : distribution finale de toutes les cotisations validées, quel que soit le statut du membre | Clôture, Distribution, Mes jackpots | **P0 — fait** (2026-11-21, à mettre en production) |
 | B44 | Correctif : aucune nouvelle cotisation pour un membre SORTI ou SUSPENDU (`MEMBRE_INACTIF`) | Payer, Encaisser | **P0 — fait** (2026-11-21, à mettre en production) |
 | B45 | Correctif : garde-fou de date à la clôture d'un tour (`TOUR_NON_COMMENCE`, `CLOTURE_FINALE_PREMATUREE`) | Tours, Remise du jackpot, Clôture | **P0 — fait** (2026-11-21, à mettre en production) |
 | B46 | Correctif : date de début passée refusée à la création, la modification et l'activation (`DATE_DEBUT_PASSEE`) | Créer, Modifier, Activer | **P0 — fait** (2026-11-21, à mettre en production) |
 | B47 | Pas de paiement sur un sous-cycle événementiel pas encore commencé | Payer, Encaisser | P1 — fait (2026-11-21, branche `fix/b43-b46-distribution-cloture`) |
 | B48 | Récapitulatifs cohérents avec la distribution : membres SORTI qui ont cotisé | Récap tour, Total par membre | P1 — fait (2026-11-21, branche `feature/b48-recap-inclure-sortis`) |
+| B49 | Saisie groupée des encaissements : une ligne par membre, un seul envoi (suite de FR23, épargne journalière) | Encaisser | **à faire** (priorité à confirmer) |
+| B50 | *Intitulé à compléter : absent de ce document et du suivi local* | — | à confirmer |
+| B51 | Répartition finale relisible (FR23) : `GET /distribution`, dans le cycle et la clôture forcée | Distribution, Fiche, Clôture | P1 — **fait** (2026-11-23, dans `main`, à mettre en production) |
+| B52 | *Intitulé à compléter : absent de ce document et du suivi local* | — | à confirmer |
+| B53 | Session longue par appareil de confiance (jeton hors ligne, PIN par appareil) | Connexion, Code secret, Paramètres | P1 — **fait** (V046, dans `main`, à mettre en production) |
+| B54 | Petites suites de FR29 : champ `montant` dans la notification `RETRAIT_REMIS`, `soldeLe` dans `recap/{cycleId}` | Alertes, Récap tour | P2 — **à faire** (0,25 j, voir 7.5) |
+| B55 | Renvoyer les jetons de la nouvelle session hors ligne dans la réponse de `POST /v1/auth/pin/setup` | Code secret | P2 — **à faire** (0,25 j, voir 7.5) |
+| B56 | Règles d'abandon déclarées à la création : remboursement à la clôture ou immédiat, commission de retrait, tour de remboursement en rotative | Créer, Réglages, Membres, Retraits, Clôture | P1 — **spécifié** (2026-11-28, voir 7.4) ; `regleRetrait` figée hors BROUILLON **faite** (branche `feature/b41-lot2-affichage-reprise`) ; lots 1 et 2 **à faire** |
 
 ---
 
@@ -883,6 +891,7 @@ Le gestionnaire choisit une **option par défaut** dans les réglages (`modeRemi
   - **parts en tontine groupée** (B34) : **oui, si le gestionnaire l'a configuré** (`partsMaxParMembre` > 1) : un membre à 2 parts achète 2 produits, cotise 2 × le montant et reçoit 2 produits → B35 passe **avant** B34 ;
   - **parts non servies d'un membre sorti** : **au choix du gestionnaire**, au moment du retrait : (a) un nouveau membre les reprend, (b) le gestionnaire les reprend, (c) le nombre de tours diminue (jackpots suivants recalculés) ; l'app montre l'effet de chaque choix avant validation ;
   - **reprise par un nouveau membre** (et plus largement **adhésion à une rotative en cours**) : par défaut, le nouveau membre **paie les cotisations des échéances déjà passées** pour suivre le flux (rattrapage, régularisation B33) ; le gestionnaire peut choisir de ne pas l'exiger ;
+  - **révisé le 2026-11-28 (porteur du projet), pratique habituelle** : un remplaçant **ne paie pas** les cotisations passées du membre sorti, il cotise simplement jusqu'à la fin ; quand il reçoit le jackpot, le gestionnaire **prélève sur ce jackpot la somme déjà cotisée par le membre sorti** et la lui rend, le reste revenant au remplaçant (ex. reprise au tour 6 : le remplaçant verse 5 × 50 000 = 250 000 F, reçoit 500 000 F, rend 250 000 F au membre sorti et garde 250 000 F) ; personne d'autre n'est touché. À reprendre avec B35 (commission éventuelle sur ce remboursement à préciser) ;
   - **remboursement** = cotisations **validées par le gestionnaire** ; si le gestionnaire a configuré une **pénalité d'abandon** (nouveau type de commission `PENALITE_ABANDON`, en **montant fixe ou en pourcentage** des cotisations remboursées, au choix du gestionnaire), elle est déduite et lui revient ;
   - **limites du nombre de gagnants** : `1 ≤ nombreGagnants ≤ parts ÷ 2` (au moins 2 tours) ; si les parts ne se divisent pas exactement (ex. 10 parts, 3 gagnants), le **dernier tour a moins de gagnants** (comportement actuel conservé), affiché par la simulation.
 - **Codes d'erreur** (à nommer à l'implémentation) : parts au-delà de `partsMaxParMembre`, activation sans toutes les parts ou sous `membresMinimum`, `nombreGagnants` hors limites.
@@ -960,6 +969,7 @@ Le gestionnaire choisit une **option par défaut** dans les réglages (`modeRemi
   - `cotisations.origine` (`DECLARATION` | `SAISIE` | `REPRISE`, reprise en base selon `enregistre_par`) dans `CotisationResponse` ; `Ponctualite.REPRISE` ; `TontineResponse.dateDebutReelle` et `repriseFigee` ; retraits datés depuis le début du cahier.
   - Codes : `REPRISE_NON_AUTORISEE`, `REPRISE_FIGEE`, `REPRISE_DATE_INVALIDE`, `TOUR_DE_REPRISE`.
   - Reporté au lot 2 : type `REPRISE` dans `/me/activite` (en attendant, un solde de départ y apparaît comme une cotisation validée à la date de saisie), colonne `Origine` dans l'export CSV, `soldeReprise` dans `/me/summary`.
+- **Lot 2 — fait le 2026-11-27, à mettre en production** (aucune migration) : `/me/activite` présente un solde de départ comme `REPRISE` (libellé « Solde de départ (cahier) <tontine> »), **daté du début du cahier** (et non du jour de saisie), donc en bas du fil ; filtre `?type=REPRISE` ; export CSV des cotisations : colonne `Origine` en fin de ligne (« Déclarée par le membre », « Saisie par le gestionnaire », « Reprise du cahier » ; colonnes précédentes inchangées) ; `/me/summary` : `soldeReprise` par tontine (déjà inclus dans `totalCotiseValide`, absent sans reprise) et `dateDebutReelle`. Tests : `CotisationServiceImplTest` (export), `MeServiceImplTest` (résumé), IT `RepriseIT` et `CotisationParcoursIT`.
   - Tests : `RepriseServiceImplTest`, compléments `CotisationServiceImplTest`, `RetraitEpargneServiceImplTest`, `CycleServiceImplTest`, `TontineServiceImplTest`, IT `RepriseIT`.
 
 #### B42 — Retraits anticipés (épargne événementielle)
@@ -968,6 +978,14 @@ Le gestionnaire choisit une **option par défaut** dans les réglages (`modeRemi
 - **Endpoints** : `POST /v1/tontines/{id}/retraits` (demande du membre), `POST …/retraits/admin` (saisie directe, `REMIS`), `PUT …/{rid}/accepter|remettre|refuser`, `DELETE …/{rid}`, `GET …/retraits`, `GET …/membres/{mid}/solde` ; notifications `RETRAIT_DEMANDE`, `RETRAIT_ACCEPTE`, `RETRAIT_REMIS`, `RETRAIT_REFUSE`.
 - **Lien B29** : un retrait est un mouvement sortant de la caisse commune ; la table est conçue pour être journalisée par B29 sans migration destructive.
 - **Lots** : 0 (distribution de tous les membres) **couvert par B43** · 1 retraits saisis par le gestionnaire + solde + distribution (3 à 4 j) · 2 demande du membre et notifications (2 j) · 3 règles, exports, activité, tableaux de bord (2 à 3 j).
+- **Lot 2 — fait le 2026-11-28, à mettre en production** (V049). **Décisions du porteur (2026-11-28)** : l'acceptation est **facultative** (le gestionnaire peut remettre directement une demande, ou d'abord l'accepter puis la remettre) ; chaque étape est notifiée **in-app et WhatsApp** (famille `JACKPOT`).
+  - `POST /v1/tontines/{id}/retraits` (membre, pour lui-même) → `DEMANDE`, origine `MEMBRE` : mêmes règles que la saisie (épargne ouverte, règle `LIBRE`, membre non soldé, partiel ≤ solde, total = tout le solde) ; une seule demande en cours par membre (409 `RETRAIT_DEJA_EN_COURS`, index unique partiel) ; `RETRAIT_DEMANDE` au gestionnaire.
+  - `PUT …/retraits/{rid}/accepter` (`DEMANDE` → `ACCEPTE`, `RETRAIT_ACCEPTE`), `PUT …/remettre` (`DEMANDE` ou `ACCEPTE` → `REMIS` avec `methodePaiement`, référence, `dateRemise` : contrôles de la saisie au moment de la remise, un total porte sur tout le solde à cette date, reprise B41 figée, `RETRAIT_REMIS`), `PUT …/refuser` (`motif` obligatoire, `RETRAIT_REFUSE`) ; sinon `RETRAIT_NOT_PENDING`.
+  - `DELETE …/retraits/{rid}` : le membre retire sa demande en cours (motif facultatif) ; le gestionnaire peut aussi l'annuler ; un retrait remis reste annulable par le gestionnaire seul, motif obligatoire (`VALIDATION_ERROR`).
+  - Distribution finale (normale ou clôture forcée) : les demandes encore en cours sont annulées d'office (« Distribution finale faite »), sans notification.
+  - `/me/summary` : `retraitEnCours` (`retraitId`, `statut`, `nature`, `montant`, `demandeLe`) ; `my-dashboard` : `retraitsEnAttente` par tontine.
+  - **Écart assumé** : la demande ne réserve pas le montant ; le solde est revérifié à la remise. Pas de notification quand le membre retire sa demande.
+  - Tests : `RetraitEpargneServiceImplTest.DemandeDuMembre`, compléments `CycleServiceImplTest`, `MeServiceImplTest`, `AdminDashboardServiceImplTest`, IT `RetraitsEpargneIT#demandeDuMembre`.
 - **Lot 1 — fait le 2026-11-23, à mettre en production** (détail : `Docs/diagnostic/2026-11-b51-b42-lot1.md`) :
   - V044 : table `retraits_epargne`, `tontine_membres.solde_le`, `distributions_evenementielles.montant_retire` (reprise 0), `tontines.regle_retrait` (reprise `INTERDIT` ; une nouvelle événementielle est `LIBRE`, une rotative `INTERDIT`) ; modifiable dans `PATCH /tontines/{id}/reglages` (événementielle seulement).
   - `POST /v1/tontines/{id}/retraits/admin` (créé `REMIS`, `dateRemise` passée permise pour reporter le cahier), `GET …/retraits?membreId=&statut=` (le membre ne voit que les siens), `DELETE …/retraits/{rid}` `{motif}` (→ `ANNULE`, avant la distribution), `GET …/retraits/export` (CSV), `GET …/membres/{mid}/solde`.
@@ -976,3 +994,53 @@ Le gestionnaire choisit une **option par défaut** dans les réglages (`modeRemi
   - `RETRAIT_REMIS` (in-app + WhatsApp famille `JACKPOT`), sauf si `dateRemise` date de plus de 24 h. `/me/summary` et `recap-total` : `totalRetire`, `solde`, `soldeLe` (événementielle). `MembreResponse.soldeLe`.
   - Retrait total refusé tant que le membre a des cotisations EN_ATTENTE ou EN_RETARD (`RETRAIT_COTISATIONS_EN_ATTENTE`, décision du 2026-11-23) : un membre soldé ne retrouve jamais un solde positif. Un retrait partiel ne s'annule pas tant que le membre est soldé. Export du récap total : reporté au lot 3.
   - Codes : `RETRAIT_INTERDIT`, `RETRAIT_SOLDE_INSUFFISANT` (`data.solde`), `MEMBRE_SOLDE`, `RETRAIT_NON_ANNULABLE`, `RETRAIT_NON_DISPONIBLE`, `RETRAIT_COTISATIONS_EN_ATTENTE` (`data.cotisationsEnAttente`).
+
+### 7.4 Règles d'abandon déclarées à la création (B56, décidé le 2026-11-28)
+
+#### B56 — Abandon de cotisation et retrait : règles convenues avec les participants
+
+- **Constat (porteur du projet, 2026-11-28)** : dans la réalité, le gestionnaire annonce à la création, en accord avec les participants, ce qui se passe quand un membre arrête de cotiser ou retire son argent. L'app doit enregistrer ces règles dès la création et les appliquer.
+- **Règles métier** :
+
+| | Événementielle | Rotative, membre sans jackpot reçu |
+|---|---|---|
+| Remboursé à la **clôture définitive** (date où chacun reçoit son dû) | ✅ | ✅ |
+| Remboursé **tout de suite** (sans impact sur les autres) | ✅ (retrait B42) | ❌ ignoré par l'app (trop complexe quand des jackpots sont déjà versés) |
+| **Commission de retrait** (fixe ou %) | ✅ | ✅ |
+| Commission versée **au gestionnaire** ou **à la tontine** (partagée entre les membres à la fin, comme les amendes) | ✅ | ✅ |
+
+  Rotative, membre qui a **déjà reçu son jackpot** : litige géré hors de l'app (décision du 2026-11-13, inchangée).
+
+- **Décisions (2026-11-28)** :
+  1. règles déclarées **à la création** (`CreateTontineRequest`), modifiables **en BROUILLON seulement** (convenues avant le démarrage, figées à l'activation, comme le rythme) ; affichées dans `TontineResponse` et l'aperçu d'invitation (B16) ;
+  2. **le gestionnaire choisit à la création** à qui revient la commission de retrait : **à lui-même** ou **à la tontine** ; dans ce second cas, elle est partagée **à parts égales** entre les membres restés jusqu'à la clôture (`Montants.repartir`, franc de reste aux premiers) ;
+  3. rotative : le montant dû au membre sorti sans jackpot (**cotisations validées − commission**) est **suivi** : affiché au gestionnaire et au membre, listé dans les points en suspens de la clôture de la tontine (B33 lot 4), membre prévenu ; le gestionnaire le **marque remboursé** (moyen, référence, date) une fois l'argent remis hors de l'app. **Qui rembourse (règle générale confirmée le 2026-11-28)** : pas de circuit à part, un **tour de remboursement** en fin de tontine. Après le départ d'un membre non servi, les jackpots suivants baissent (moins de cotisants, déjà le calcul du jackpot prévu) ; au tour de remboursement, **chaque membre paie la différence entre le jackpot reçu et ce qu'il a cotisé sur les tours normaux** (ceux qui ont reçu un jackpot plus gros que leurs versements), et **chaque membre sorti reçoit ce qu'il a versé** (moins la commission éventuelle). Chacun retombe à zéro.
+     - *Exemple 1* : 10 membres × 50 000 F, X part après 5 jackpots. Tours 1–5 : 500 000 F (10 cotisants) ; tours 6–9 : 450 000 F (9 cotisants) ; tour 10 = remboursement : seuls les gagnants 1–5 cotisent 50 000 F chacun → 250 000 F à X. Bilan : gagnants 1–5 versent 500 000 / reçoivent 500 000 ; gagnants 6–9 : 450 000 / 450 000 ; X : 250 000 / 250 000.
+     - *Exemple 2* : X part après le tour 5, Y après le tour 7 ; 8 tours normaux, 400 000 F versés par chaque membre resté. Au remboursement : gagnants 1–5 (500 000 reçus) paient 100 000 chacun, gagnants 6–7 (450 000) paient 50 000 chacun, gagnant 8 (400 000) rien → 600 000 F = X (250 000) + Y (350 000).
+     - *Conséquences dans l'app* : nombre de tours = membres servis + 1 tour de remboursement (les tours générés sans bénéficiaire sont retirés, le dernier devient le tour de remboursement) ; sur ce tour, le **montant dû varie par membre** (certains ne paient rien) : changement du modèle de cotisation (aujourd'hui un montant unique par tour) ; commission : déduite du remboursement du membre sorti, versée au gestionnaire ou partagée à parts égales entre les membres restés, selon le choix fait à la création ;
+  4. **commission seulement si le gestionnaire en a configuré une** (sinon aucun frais, comportement actuel) ; en événementielle, elle s'applique alors à **tout retrait avant la fin** : retrait anticipé partiel ou total (B42) et abandon remboursé à la distribution finale.
+
+- **Modèle proposé** (à confirmer à l'implémentation) :
+  - `tontines.remboursement_abandon` (`A_LA_CLOTURE` | `IMMEDIAT`, rotative : `A_LA_CLOTURE` seul) ; en événementielle, il remplace dans les faits `regle_retrait` (`IMMEDIAT` ⇔ `LIBRE`, `A_LA_CLOTURE` ⇔ `INTERDIT`) : un seul réglage exposé au front ;
+  - `tontines.commission_abandon_type` (`AUCUNE` | `FIXE` | `POURCENTAGE`), `commission_abandon_valeur`, `commission_abandon_destination` (`GESTIONNAIRE` | `TONTINE`) ; reprise : `AUCUNE` pour les tontines existantes (comportement inchangé) ;
+  - commission d'un retrait : colonne `retraits_epargne.frais` (déjà prévue en V044, à 0 aujourd'hui) ; `Montants.pourcentage` pour un pourcentage ; solde = cotisé − (montant + frais), déjà la formule de B42 ;
+  - rotative : passage SORTI d'un membre sans jackpot → un remboursement dû (réutilise `retraits_epargne` : `TOTAL`, statut `ACCEPTE`, origine `GESTIONNAIRE`) ; le tour de remboursement porte un montant dû par membre (jackpot reçu − cotisé) ; une fois ce tour remis, `PUT …/retraits/{id}/remettre` marque le membre sorti remboursé ;
+  - commission destinée à la tontine : ajoutée à la distribution finale (événementielle : une part égale par membre resté, colonne dédiée dans `distributions_evenementielles`) ; en rotative, répartie à la clôture définitive et notifiée (suivi, sans caisse avant B29).
+
+- **Écarts avec les spécifications antérieures** :
+  - B35 (2026-11-13) prévoyait en rotative un remboursement `IMMEDIAT` au choix et une pénalité d'abandon (`PENALITE_ABANDON`) **toujours au gestionnaire** : **remplacé** par B56 (pas d'immédiat en rotative, destination au choix) ;
+  - B42 lot 3 prévoyait une règle `AVEC_FRAIS` : **remplacée** par la commission de retrait de B56 ; il reste au lot 3 la règle `APRES_JOURS` (délai), l'activité et l'export ;
+  - B42 lot 1 rendait `regleRetrait` modifiable à tout moment (`PATCH /reglages`) : **aligné le 2026-11-28** sur la décision 1 : déclarée à la création (`CreateTontineRequest.regleRetrait`, événementielle, défaut `LIBRE`, ignorée en rotative), modifiable en BROUILLON seulement (400 `REGLE_RETRAIT_NON_MODIFIABLE` ensuite, même valeur acceptée) ; les tontines déjà actives gardent leur valeur.
+
+- **Reprise de la place d'un membre sorti** (nouveau membre ou gestionnaire) : **hors B56**, reportée à B35 (décision du 2026-11-28) ; règle habituelle notée dans B35 : le remplaçant ne rattrape pas les cotisations passées, et le membre sorti est remboursé sur le jackpot du remplaçant.
+- **Dépendances** : B42 (retraits, solde), B43 (distribution de tous les membres), B33 lot 4 (points en suspens de la clôture) ; B27 / B29 pour une vraie caisse plus tard (la part « tontine » sera alors un mouvement de caisse).
+- **Découpage proposé** : lot 1 règles à la création + commission sur les retraits événementiels + part « tontine » dans la distribution finale (2 à 3 j) · lot 2 abandon en rotative : tour de remboursement à montants par membre, tours sans bénéficiaire retirés, montant dû, points en suspens, marqué remboursé, part « tontine » (4 à 5 j, à réestimer : le montant variable par membre touche cotisations, récaps, rappels et jackpot prévu).
+
+### 7.5 Petites suites (B54, B55)
+
+#### B54 — Petites suites de FR29 (P2, 0,25 j, à faire)
+- **Notification `RETRAIT_REMIS`** : ajouter le champ `montant` (montant remis, en francs) à la notification, pour que le front l'affiche sans analyser le texte.
+- **`GET /cotisations/recap/{cycleId}`** : renvoyer `soldeLe` sur chaque ligne (membre soldé, B42), comme `recap-total`.
+
+#### B55 — Jetons de la session hors ligne à la création du PIN (P2, 0,25 j, à faire)
+- **`POST /v1/auth/pin/setup`** : quand l'appareil devient de confiance (B53 : `motDePasse`, `appareilId`, `clientType` fournis), renvoyer dans la réponse les jetons de la nouvelle session hors ligne (`access_token`, `refresh_token`), pour que le front remplace ses jetons sans reconnexion.
