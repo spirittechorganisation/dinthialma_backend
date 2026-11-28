@@ -29,6 +29,9 @@ public interface ActiviteMapper {
     if ("DISTRIBUTION_RECUE".equals(row.getType())) {
       return "Distribution finale " + row.getTontineNom();
     }
+    if ("REPRISE".equals(row.getType())) {
+      return "Solde de départ (cahier) " + row.getTontineNom();
+    }
     String prefixe = "JACKPOT_RECU".equals(row.getType()) ? "Jackpot " : "Cotisation ";
     return prefixe + row.getTontineNom() + " · tour " + row.getNumeroCycle();
   }

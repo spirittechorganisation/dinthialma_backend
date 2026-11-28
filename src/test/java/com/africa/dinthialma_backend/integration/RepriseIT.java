@@ -140,6 +140,31 @@ class RepriseIT extends AbstractIntegrationTest {
         201);
     assertThat(solde(e, e.awaId())).isEqualTo(43000);
 
+    // Lot 2 : solde de départ dans le résumé du membre et dans son fil, daté du début du cahier
+    JsonNode resume =
+        StreamSupport.stream(
+                api.get("/v1/me/summary", e.awa().jeton()).data().path("tontines").spliterator(),
+                false)
+            .filter(t -> e.tontineId().equals(t.path("tontineId").asText()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(resume.path("soldeReprise").asInt()).isEqualTo(42000);
+    assertThat(resume.path("dateDebutReelle").asText()).isEqualTo(cahier.toString());
+    assertThat(resume.path("totalCotiseValide").asInt()).isEqualTo(43000);
+    JsonNode fil =
+        api.get("/v1/me/activite?mode=COTISE&tontineId=" + e.tontineId(), e.awa().jeton())
+            .data()
+            .path("content");
+    JsonNode ligneReprise =
+        StreamSupport.stream(fil.spliterator(), false)
+            .filter(l -> "REPRISE".equals(l.path("type").asText()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(ligneReprise.path("montant").asInt()).isEqualTo(42000);
+    assertThat(ligneReprise.path("date").asText()).startsWith(cahier.toString());
+    assertThat(ligneReprise.path("libelle").asText()).startsWith("Solde de départ (cahier)");
+    assertThat(fil.get(fil.size() - 1).path("type").asText()).isEqualTo("REPRISE");
+
     JsonNode figee =
         TestDataFactory.attendre(api.post(e.base() + "/reprise/figer", g, null), 200).data();
     assertThat(figee.path("statut").asText()).isEqualTo("FIGEE");

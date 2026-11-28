@@ -30,6 +30,8 @@ import com.africa.dinthialma_backend.contribution.entity.Cotisation;
 import com.africa.dinthialma_backend.contribution.mapper.CotisationMapper;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
 import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
+import com.africa.dinthialma_backend.epargne.codeList.StatutRetrait;
+import com.africa.dinthialma_backend.epargne.repository.RetraitEpargneRepository;
 import com.africa.dinthialma_backend.jackpot.codeList.StatutPriorite;
 import com.africa.dinthialma_backend.jackpot.repository.PrioriteJackpotRepository;
 import com.africa.dinthialma_backend.member.repository.TontineMembreRepository;
@@ -79,6 +81,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
   private final UserSessionService userSessionService;
   private final DemandeAdhesionRepository demandeRepository;
   private final PrioriteJackpotRepository prioriteRepository;
+  private final RetraitEpargneRepository retraitRepository;
   private final SuiviTourService suiviTour;
 
   // ─── Dashboard global SUPER_ADMIN ─────────────────────────────────────────
@@ -451,6 +454,11 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         .prioritesEnAttente(
             prioriteRepository.countByTontine_IdAndStatutAndDeletedAtIsNull(
                 tid, StatutPriorite.EN_ATTENTE))
+        .retraitsEnAttente(
+            evenementielle
+                ? retraitRepository.countByTontine_IdAndStatutInAndDeletedAtIsNull(
+                    tid, List.of(StatutRetrait.DEMANDE, StatutRetrait.ACCEPTE))
+                : 0)
         .build();
   }
 

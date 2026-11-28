@@ -302,6 +302,47 @@ public class WhatsappService {
     send(CategorieWhatsapp.JACKPOT, phone, message);
   }
 
+  /** Demande de retrait d'un membre, au gestionnaire (B42, lot 2). */
+  public void sendRetraitDemande(
+      String phone, String membreNom, String tontineName, String montant) {
+    String message =
+        "💵 *Dinthialma* – "
+            + membreNom
+            + " demande un retrait de *"
+            + montant
+            + " FCFA* sur l'épargne *"
+            + tontineName
+            + "*.\n👉 Accepter, remettre ou refuser : "
+            + appUrl;
+    send(CategorieWhatsapp.JACKPOT, phone, message);
+  }
+
+  /** Demande de retrait acceptée, remise à venir (B42, lot 2). */
+  public void sendRetraitAccepte(String phone, String tontineName, String montant) {
+    String message =
+        "💵 *Dinthialma* – Votre demande de retrait de *"
+            + montant
+            + " FCFA* sur *"
+            + tontineName
+            + "* est acceptée : votre gestionnaire vous remettra l'argent.\n👉 Détails : "
+            + appUrl;
+    send(CategorieWhatsapp.JACKPOT, phone, message);
+  }
+
+  /** Demande de retrait refusée, avec le motif (B42, lot 2). */
+  public void sendRetraitRefuse(String phone, String tontineName, String montant, String motif) {
+    String message =
+        "💵 *Dinthialma* – Votre demande de retrait de *"
+            + montant
+            + " FCFA* sur *"
+            + tontineName
+            + "* est refusée.\nMotif : "
+            + motif
+            + "\n👉 Détails : "
+            + appUrl;
+    send(CategorieWhatsapp.JACKPOT, phone, message);
+  }
+
   /** Solde de départ repris du cahier, à la reprise figée (B41) : le membre peut le contester. */
   public void sendSoldeDepart(
       String phone, String tontineName, String montant, String dateDebutReelle) {

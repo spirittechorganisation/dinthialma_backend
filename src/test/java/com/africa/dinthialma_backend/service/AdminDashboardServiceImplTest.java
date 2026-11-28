@@ -3,6 +3,7 @@ package com.africa.dinthialma_backend.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -36,6 +37,7 @@ import com.africa.dinthialma_backend.contribution.dto.EtatTour;
 import com.africa.dinthialma_backend.contribution.mapper.CotisationMapper;
 import com.africa.dinthialma_backend.contribution.repository.CotisationRepository;
 import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
+import com.africa.dinthialma_backend.epargne.repository.RetraitEpargneRepository;
 import com.africa.dinthialma_backend.jackpot.repository.PrioriteJackpotRepository;
 import com.africa.dinthialma_backend.member.repository.TontineMembreRepository;
 import com.africa.dinthialma_backend.support.Fixtures;
@@ -89,6 +91,7 @@ class AdminDashboardServiceImplTest {
   @Mock private KeycloakAuthService keycloakAuthService;
   @Mock private DemandeAdhesionRepository demandeRepository;
   @Mock private PrioriteJackpotRepository prioriteRepository;
+  @Mock private RetraitEpargneRepository retraitRepository;
   @Mock private SuiviTourService suiviTour;
   @Mock private UserSessionService userSessionService;
   @InjectMocks private AdminDashboardServiceImpl service;
@@ -482,9 +485,16 @@ class AdminDashboardServiceImplTest {
           .thenReturn(List.of(tour));
       when(cotisationRepository.countAndSumByStatutForCycle(tour.getId())).thenReturn(List.of());
 
-      MyDashboardResponse.CycleEnCoursInfo info =
-          service.getMyDashboard(k, page).getTontines().getContent().get(0).getCycleEnCours();
+      when(retraitRepository.countByTontine_IdAndStatutInAndDeletedAtIsNull(
+              eq(t.getId()), anyList()))
+          .thenReturn(2L);
 
+      MyDashboardResponse.TontineStats stats =
+          service.getMyDashboard(k, page).getTontines().getContent().get(0);
+      MyDashboardResponse.CycleEnCoursInfo info = stats.getCycleEnCours();
+
+      // B42 lot 2 : demandes de retrait à traiter (événementielle)
+      assertThat(stats.getRetraitsEnAttente()).isEqualTo(2);
       assertThat(info.getBeneficiaireNom()).isNull();
       assertThat(info.getMembresAyantPaye()).isZero();
       assertThat(info.getMontantCollecte()).isEqualByComparingTo("0");

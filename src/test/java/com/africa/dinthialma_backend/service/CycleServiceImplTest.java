@@ -32,6 +32,7 @@ import com.africa.dinthialma_backend.contribution.repository.CotisationRepositor
 import com.africa.dinthialma_backend.contribution.service.interfaces.RepriseService;
 import com.africa.dinthialma_backend.contribution.service.interfaces.SuiviTourService;
 import com.africa.dinthialma_backend.epargne.repository.RetraitEpargneRepository;
+import com.africa.dinthialma_backend.epargne.service.interfaces.RetraitEpargneService;
 import com.africa.dinthialma_backend.jackpot.service.interfaces.PrioriteJackpotService;
 import com.africa.dinthialma_backend.member.codeList.MembreStatut;
 import com.africa.dinthialma_backend.member.entity.TontineMembre;
@@ -120,6 +121,7 @@ class CycleServiceImplTest {
   @Mock private SuiviTourService suiviTour;
   @Mock private RetraitEpargneRepository retraitRepository;
   @Mock private RepriseService repriseService;
+  @Mock private RetraitEpargneService retraitService;
   @InjectMocks private CycleServiceImpl service;
 
   private User gestionnaire;
@@ -1525,6 +1527,7 @@ class CycleServiceImplTest {
 
       CycleResponse r = service.closeCycle(kc, tontine.getId(), c.getId());
       verify(repriseService).figerSiOuverte(gestionnaire, tontine);
+      verify(retraitService).annulerDemandesEnCours(gestionnaire, tontine);
 
       assertThat(r.getDistributionParMembre())
           .extracting(CycleResponse.MembreDistributionInfo::getMembreId)

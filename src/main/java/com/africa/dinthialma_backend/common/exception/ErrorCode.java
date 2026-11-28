@@ -243,7 +243,16 @@ public enum ErrorCode {
   /** Date de début du cahier pas antérieure à la date de début de la tontine (B41). */
   REPRISE_DATE_INVALIDE,
   /** Paiement sur le tour de reprise (n° 0) : il ne reçoit que les soldes de départ (B41). */
-  TOUR_DE_REPRISE;
+  TOUR_DE_REPRISE,
+  /** Le membre a déjà une demande de retrait en cours (DEMANDE ou ACCEPTE, B42 lot 2). */
+  RETRAIT_DEJA_EN_COURS,
+  /** Le retrait n'est plus une demande en cours : déjà remis, refusé ou annulé (B42 lot 2). */
+  RETRAIT_NOT_PENDING,
+  /**
+   * Règle de retrait modifiée hors BROUILLON (B54) : convenue avec les participants avant le
+   * démarrage, elle est figée à l'activation.
+   */
+  REGLE_RETRAIT_NON_MODIFIABLE;
 
   /** Code générique correspondant à un statut HTTP (repli quand aucun code métier n'est fourni). */
   public static ErrorCode fromStatus(HttpStatusCode status) {

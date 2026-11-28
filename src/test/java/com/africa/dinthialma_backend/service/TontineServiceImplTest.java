@@ -1328,10 +1328,25 @@ class TontineServiceImplTest {
     }
 
     @Test
-    @DisplayName("événementielle en cours : règle modifiable et auditée")
+    @DisplayName("B54 : règle choisie à la création (événementielle) ; ignorée en rotative")
+    void choisieALaCreation() throws Exception {
+      CreateTontineRequest evt = requeteEvenementielle();
+      evt.setRegleRetrait(RegleRetrait.INTERDIT);
+      assertThat(service.createTontine(gestionnaire.getKeycloakId(), evt).getRegleRetrait())
+          .isEqualTo(RegleRetrait.INTERDIT);
+      CreateTontineRequest rot = rotative();
+      rot.setRegleRetrait(RegleRetrait.LIBRE);
+      assertThat(service.createTontine(gestionnaire.getKeycloakId(), rot).getRegleRetrait())
+          .isEqualTo(RegleRetrait.INTERDIT);
+    }
+
+    @Test
+    @DisplayName(
+        "B54 : modifiable et auditée en BROUILLON ; figée ensuite (REGLE_RETRAIT_NON_MODIFIABLE),"
+            + " même valeur acceptée")
     void modification() throws Exception {
       tontine.setTontineType(TontineType.EVENEMENTIELLE);
-      tontine.setStatut(TontineStatut.ACTIVE);
+      tontine.setStatut(TontineStatut.BROUILLON);
       tontine.setRegleRetrait(RegleRetrait.INTERDIT);
 
       TontineResponse r =
@@ -1341,6 +1356,22 @@ class TontineServiceImplTest {
       assertThat(r.getRegleRetrait()).isEqualTo(RegleRetrait.LIBRE);
       verify(auditService)
           .log(gestionnaire, "tontines", tontine.getId(), "regleRetrait", "INTERDIT", "LIBRE");
+
+      tontine.setStatut(TontineStatut.ACTIVE);
+      assertThatThrownBy(
+              () ->
+                  service.modifierReglages(
+                      gestionnaire.getKeycloakId(), tontine.getId(), regle(RegleRetrait.INTERDIT)))
+          .satisfies(
+              e ->
+                  assertThat(((CustomException) e).getCode())
+                      .isEqualTo(ErrorCode.REGLE_RETRAIT_NON_MODIFIABLE));
+      assertThat(
+              service
+                  .modifierReglages(
+                      gestionnaire.getKeycloakId(), tontine.getId(), regle(RegleRetrait.LIBRE))
+                  .getRegleRetrait())
+          .isEqualTo(RegleRetrait.LIBRE);
     }
 
     @Test

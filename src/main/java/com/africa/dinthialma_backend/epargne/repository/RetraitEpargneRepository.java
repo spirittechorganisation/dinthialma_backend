@@ -1,5 +1,6 @@
 package com.africa.dinthialma_backend.epargne.repository;
 
+import com.africa.dinthialma_backend.epargne.codeList.StatutRetrait;
 import com.africa.dinthialma_backend.epargne.entity.RetraitEpargne;
 import java.math.BigDecimal;
 import java.util.Collection;
@@ -43,6 +44,22 @@ public interface RetraitEpargneRepository
           + "   AND r.deletedAt IS NULL"
           + " GROUP BY r.membre.id")
   List<Object[]> sumRemisGroupByMembreIn(@Param("membreIds") Collection<UUID> membreIds);
+
+  /** Vrai si le membre a déjà un retrait dans l'un de ces statuts (demande en cours, B42). */
+  boolean existsByMembre_IdAndStatutInAndDeletedAtIsNull(
+      UUID membreId, Collection<StatutRetrait> statuts);
+
+  /** Retraits d'une tontine dans ces statuts (demandes à annuler à la distribution, B42). */
+  List<RetraitEpargne> findByTontine_IdAndStatutInAndDeletedAtIsNull(
+      UUID tontineId, Collection<StatutRetrait> statuts);
+
+  /** Retraits de ces memberships dans ces statuts (demande en cours dans /me/summary). */
+  List<RetraitEpargne> findByMembre_IdInAndStatutInAndDeletedAtIsNull(
+      Collection<UUID> membreIds, Collection<StatutRetrait> statuts);
+
+  /** Nombre de retraits d'une tontine dans ces statuts (demandes à traiter, my-dashboard). */
+  long countByTontine_IdAndStatutInAndDeletedAtIsNull(
+      UUID tontineId, Collection<StatutRetrait> statuts);
 
   /** Tous les retraits d'une tontine (export), membre et utilisateur chargés. */
   @Query(
