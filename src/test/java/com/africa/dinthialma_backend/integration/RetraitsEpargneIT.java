@@ -316,8 +316,8 @@ class RetraitsEpargneIT extends AbstractIntegrationTest {
 
   @Test
   @DisplayName(
-      "règle INTERDIT, solde insuffisant, rotative, tontine terminée ; règle modifiable dans les"
-          + " réglages")
+      "règle INTERDIT choisie à la création, solde insuffisant, rotative, tontine terminée ;"
+          + " règle figée une fois la tontine active (B54)")
   void refus() {
     Utilisateur g = donnees.inscrire("Gestionnaire");
     String tid = epargne(g, "Épargne règles", 10, null);
@@ -331,9 +331,23 @@ class RetraitsEpargneIT extends AbstractIntegrationTest {
     assertThat(insuffisant.data().path("solde").decimalValue())
         .isEqualByComparingTo(new BigDecimal("3000"));
 
-    TestDataFactory.attendre(
-        api.patch(tontine(tid) + "/reglages", g.jeton(), Map.of("regleRetrait", "INTERDIT")), 200);
-    assertThat(retirer(g, tid, retrait(awa, "PARTIEL", 1000, null)).code())
+    assertThat(
+            api.patch(tontine(tid) + "/reglages", g.jeton(), Map.of("regleRetrait", "INTERDIT"))
+                .code())
+        .isEqualTo("REGLE_RETRAIT_NON_MODIFIABLE");
+    Map<String, Object> interdite = new HashMap<>();
+    interdite.put("tontineType", "EVENEMENTIELLE");
+    interdite.put("frequence", "JOURNALIERE");
+    interdite.put("dateEcheance", LocalDate.now().plusDays(3).toString());
+    interdite.put("regleRetrait", "INTERDIT");
+    String tidInterdit =
+        donnees.creerTontine(g.jeton(), "Épargne sans retrait", interdite).path("id").asText();
+    assertThat(api.get(tontine(tidInterdit), g.jeton()).data().path("regleRetrait").asText())
+        .isEqualTo("INTERDIT");
+    String binta = preInscrire(g, tidInterdit, "Binta");
+    donnees.activer(g.jeton(), tidInterdit);
+    TestDataFactory.attendre(encaisser(g, tidInterdit, cycle(g, tidInterdit, 1), binta, 1000), 201);
+    assertThat(retirer(g, tidInterdit, retrait(binta, "PARTIEL", 1000, null)).code())
         .isEqualTo("RETRAIT_INTERDIT");
 
     String rotative = donnees.creerTontine(g.jeton(), "Rotative").path("id").asText();
@@ -344,8 +358,6 @@ class RetraitsEpargneIT extends AbstractIntegrationTest {
     assertThat(retirer(g, rotative, retrait(awa, "PARTIEL", 1000, null)).code())
         .isEqualTo("RETRAIT_NON_DISPONIBLE");
 
-    TestDataFactory.attendre(
-        api.patch(tontine(tid) + "/reglages", g.jeton(), Map.of("regleRetrait", "LIBRE")), 200);
     TestDataFactory.attendre(
         api.put(tontine(tid) + "/cloturer", g.jeton(), Map.of("forcer", true)), 200);
     assertThat(retirer(g, tid, retrait(awa, "PARTIEL", 1000, null)).code())

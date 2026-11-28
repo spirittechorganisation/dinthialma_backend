@@ -147,9 +147,9 @@ public class TontineServiceImpl implements TontineService {
                     : OuvertureTours.A_LA_DATE)
             .remiseAutomatique(
                 type == TontineType.ROTATIVE && Boolean.TRUE.equals(request.getRemiseAutomatique()))
-            // B42 : retraits anticipés permis par défaut sur une nouvelle épargne événementielle
-            .regleRetrait(
-                type == TontineType.EVENEMENTIELLE ? RegleRetrait.LIBRE : RegleRetrait.INTERDIT)
+            // B42/B54 : retraits anticipés permis par défaut sur une nouvelle épargne
+            // événementielle, sauf règle contraire convenue à la création
+            .regleRetrait(regleRetrait(type, request.getRegleRetrait()))
             .ordreBeneficiaire(
                 type == TontineType.EVENEMENTIELLE ? null : request.getOrdreBeneficiaire())
             .modeCycle(
@@ -524,6 +524,14 @@ public class TontineServiceImpl implements TontineService {
           "Les retraits anticipés concernent les tontines événementielles",
           ErrorCode.RETRAIT_NON_DISPONIBLE);
     }
+    if (request.getRegleRetrait() != null
+        && request.getRegleRetrait() != tontine.getRegleRetraitEffectif()
+        && tontine.getStatut() != TontineStatut.BROUILLON) {
+      throw new BadRequestException(
+          "La règle de retrait, convenue avec les participants, ne se modifie qu'avant le"
+              + " démarrage de la tontine",
+          ErrorCode.REGLE_RETRAIT_NON_MODIFIABLE);
+    }
     if (request.getRemiseAutomatique() != null && !rotative) {
       throw new BadRequestException(
           "La remise automatique à l'échéance concerne les tontines rotatives : en événementielle,"
@@ -565,6 +573,14 @@ public class TontineServiceImpl implements TontineService {
           tontine::setModeRemise);
     }
     return toResponse(tontineRepository.save(tontine), caller);
+  }
+
+  /** Règle de retrait : choisie en événementielle (défaut LIBRE), toujours INTERDIT en rotative. */
+  private static RegleRetrait regleRetrait(TontineType type, RegleRetrait demandee) {
+    if (type != TontineType.EVENEMENTIELLE) {
+      return RegleRetrait.INTERDIT;
+    }
+    return demandee != null ? demandee : RegleRetrait.LIBRE;
   }
 
   /** Option de remise retenue : DISPONIBLE par défaut ; CAISSE pas encore disponible. */
