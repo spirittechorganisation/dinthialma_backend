@@ -873,6 +873,24 @@ class MeServiceImplTest {
       MeSummaryResponse.TontineCotisant ligneRotative = lignes.get(1);
       assertThat(ligneRotative.getTotalRetire()).isNull();
       assertThat(ligneRotative.getSolde()).isNull();
+      assertThat(ligneRotative.getSoldeReprise()).isNull();
+    }
+
+    @Test
+    @DisplayName("B41 : solde de départ repris du cahier et date du cahier dans le résumé")
+    void soldeReprise() throws Exception {
+      Tontine epargne = Fixtures.tontine(gestionnaire);
+      epargne.setTontineType(TontineType.EVENEMENTIELLE);
+      epargne.setDateDebutReelle(LocalDate.of(2026, 11, 1));
+      TontineMembre membre = Fixtures.membre(epargne, moi, 1);
+      mesAdhesions(membre);
+      when(cotisationRepository.sumRepriseByMembreIds(anyList()))
+          .thenReturn(List.<Object[]>of(new Object[] {membre.getId(), new BigDecimal("42000")}));
+
+      MeSummaryResponse.TontineCotisant ligne = service.getSummary(kc).getTontines().get(0);
+
+      assertThat(ligne.getSoldeReprise()).isEqualByComparingTo("42000");
+      assertThat(ligne.getDateDebutReelle()).isEqualTo(LocalDate.of(2026, 11, 1));
     }
   }
 }

@@ -283,8 +283,10 @@ class CotisationParcoursIT extends AbstractIntegrationTest {
     String[] lignes = new String(octets, StandardCharsets.UTF_8).substring(1).split("\r\n");
     assertThat(lignes[0])
         .startsWith("Tour;Membre;Téléphone")
-        .endsWith(";Échéance du tour;Ponctualité;Payée le;Rythme");
-    assertThat(lignes[1]).contains(";A_TEMPS;").endsWith(";chaque mois, avant 23h59");
+        .endsWith(";Échéance du tour;Ponctualité;Payée le;Rythme;Origine");
+    assertThat(lignes[1])
+        .contains(";A_TEMPS;")
+        .endsWith(";chaque mois, avant 23h59;Déclarée par le membre");
     assertThat(lignes).hasSize(2);
 
     assertThat(api.get(cotisations(t) + "/export?format=xlsx", t.gestionnaire().jeton()).code())

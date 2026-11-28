@@ -630,7 +630,8 @@ public class CotisationServiceImpl implements CotisationService {
 
     // Colonnes historiques inchangées (lecture par position), puis ajouts B26 / S01 en fin de
     // ligne : échéance du tour, ponctualité, date de paiement en main propre et rythme lisible
-    // (même valeur sur chaque ligne, pour que le fichier reste un tableau réimportable).
+    // (même valeur sur chaque ligne, pour que le fichier reste un tableau réimportable), puis
+    // l'origine (B41 : un solde de départ du cahier est au tour 0).
     String rythme = tontine.getRythme().libelle();
     CsvWriter csv =
         new CsvWriter()
@@ -649,7 +650,8 @@ public class CotisationServiceImpl implements CotisationService {
                 "Échéance du tour",
                 "Ponctualité",
                 "Payée le",
-                "Rythme");
+                "Rythme",
+                "Origine");
     for (Cotisation c : cotisations) {
       var u = c.getMembre().getUser();
       csv.ligne(
@@ -667,9 +669,22 @@ public class CotisationServiceImpl implements CotisationService {
           c.getEcheance() != null ? c.getEcheance().getEcheanceAt() : c.getCycle().getEcheanceAt(),
           Ponctualite.de(c),
           c.getDatePaiement(),
-          rythme);
+          rythme,
+          libelleOrigine(c.getOrigine()));
     }
     return FichierExport.csv("cotisations-" + tontineId + ".csv", csv.toBytes());
+  }
+
+  /** Origine lisible dans l'export (B41). */
+  private static String libelleOrigine(OrigineCotisation origine) {
+    if (origine == null) {
+      return null;
+    }
+    return switch (origine) {
+      case DECLARATION -> "Déclarée par le membre";
+      case SAISIE -> "Saisie par le gestionnaire";
+      case REPRISE -> "Reprise du cahier";
+    };
   }
 
   // ─── Récupération unique ──────────────────────────────────────────────────

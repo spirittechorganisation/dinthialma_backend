@@ -148,6 +148,20 @@ public class MeSummaryResponse {
 
     @Schema(
         description =
+            "Mon solde de départ repris du cahier (B41), déjà inclus dans totalCotiseValide ;"
+                + " absent sans reprise",
+        example = "42000",
+        nullable = true)
+    private BigDecimal soldeReprise;
+
+    @Schema(
+        description = "Début du cahier quand la tontine a commencé avant l'application (B41)",
+        example = "2026-11-01",
+        nullable = true)
+    private LocalDate dateDebutReelle;
+
+    @Schema(
+        description =
             "Total reçu dans cette tontine (FCFA) : jackpots (ROTATIVE) ou part de la"
                 + " distribution finale (EVENEMENTIELLE, mise moins commission). 0 si rien.",
         example = "50000")

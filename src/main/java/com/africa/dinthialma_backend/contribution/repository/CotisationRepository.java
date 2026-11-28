@@ -109,6 +109,19 @@ public interface CotisationRepository
           + " GROUP BY c.membre.id, c.cycle.id")
   List<Object[]> countValideByMembreAndCycle(@Param("membreIds") List<UUID> membreIds);
 
+  /**
+   * Soldes de départ repris du cahier (B41) par membership. Chaque ligne : {@code [membreId (UUID),
+   * montant (BigDecimal)]}.
+   */
+  @Query(
+      "SELECT c.membre.id, SUM(c.montant) FROM Cotisation c"
+          + " WHERE c.membre.id IN :membreIds"
+          + "   AND c.origine = com.africa.dinthialma_backend.contribution.codeList.OrigineCotisation.REPRISE"
+          + "   AND c.statut = com.africa.dinthialma_backend.contribution.codeList.CotisationStatut.VALIDE"
+          + "   AND c.deletedAt IS NULL"
+          + " GROUP BY c.membre.id")
+  List<Object[]> sumRepriseByMembreIds(@Param("membreIds") List<UUID> membreIds);
+
   /** Cotisations actives d'une tontine selon leur origine (soldes de départ repris, B41). */
   List<Cotisation> findByTontine_IdAndOrigineAndDeletedAtIsNull(
       UUID tontineId, OrigineCotisation origine);

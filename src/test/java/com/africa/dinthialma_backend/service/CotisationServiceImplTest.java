@@ -27,6 +27,7 @@ import com.africa.dinthialma_backend.common.exception.ForbiddenException;
 import com.africa.dinthialma_backend.common.exception.NotFoundException;
 import com.africa.dinthialma_backend.common.util.FichierExport;
 import com.africa.dinthialma_backend.contribution.codeList.CotisationStatut;
+import com.africa.dinthialma_backend.contribution.codeList.OrigineCotisation;
 import com.africa.dinthialma_backend.contribution.codeList.Ponctualite;
 import com.africa.dinthialma_backend.contribution.dto.AdminRecordCotisationRequest;
 import com.africa.dinthialma_backend.contribution.dto.CotisationResponse;
@@ -649,9 +650,16 @@ class CotisationServiceImplTest {
     void export() throws Exception {
       Cotisation c = existante(CotisationStatut.REFUSE);
       c.setMotifRefus("doublon");
+      c.setOrigine(OrigineCotisation.SAISIE);
       c.getCycle().setEcheanceAt(LocalDate.of(2026, 11, 22).atTime(20, 0));
+      // B41 : origine lisible en fin de ligne (absente pour une ligne sans origine connue)
+      Cotisation declaree = existante(CotisationStatut.VALIDE);
+      declaree.setOrigine(OrigineCotisation.DECLARATION);
+      Cotisation reprise = existante(CotisationStatut.VALIDE);
+      reprise.setOrigine(OrigineCotisation.REPRISE);
+      Cotisation sansOrigine = existante(CotisationStatut.VALIDE);
       when(cotisationRepository.findAll(any(Specification.class), any(Pageable.class)))
-          .thenReturn(new PageImpl<>(List.of(c)));
+          .thenReturn(new PageImpl<>(List.of(c, declaree, reprise, sansOrigine)));
 
       FichierExport f =
           service.exportCotisations(
@@ -660,12 +668,17 @@ class CotisationServiceImplTest {
       String contenu = new String(f.contenu(), StandardCharsets.UTF_8);
       assertThat(f.nomFichier()).isEqualTo("cotisations-" + tontine.getId() + ".csv");
       assertThat(contenu)
-          .contains("Tour;Membre;Téléphone;", ";Note;Échéance du tour;Ponctualité;Payée le;Rythme")
+          .contains(
+              "Tour;Membre;Téléphone;",
+              ";Note;Échéance du tour;Ponctualité;Payée le;Rythme;Origine")
           .contains("Awa Test")
           .contains("doublon")
           // B26 : échéance du tour, ponctualité (refusée = non déclarée), rythme lisible
-          .contains(";2026-11-22T20:00;NON_DECLAREE;;chaque mois, avant 23h59");
-      assertThat(contenu.lines().filter(l -> !l.isBlank())).hasSize(2);
+          .contains(
+              ";2026-11-22T20:00;NON_DECLAREE;;chaque mois, avant 23h59;Saisie par le gestionnaire")
+          .contains(";Déclarée par le membre", ";Reprise du cahier");
+      assertThat(contenu.lines().filter(l -> !l.isBlank())).hasSize(5);
+      assertThat(contenu.lines().filter(l -> l.endsWith("avant 23h59;"))).hasSize(1);
 
       assertThatThrownBy(
               () ->

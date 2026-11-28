@@ -16,7 +16,8 @@ import org.springframework.data.repository.query.Param;
  * {@code UNION ALL}, triée par date d'événement décroissante.
  *
  * <p>Chaque cotisation apparaît une fois, dans son état courant (déclarée, validée, encaissée par
- * le gestionnaire, en retard, refusée) ; chaque jackpot versé apparaît comme JACKPOT_RECU.
+ * le gestionnaire, en retard, refusée) ; chaque jackpot versé apparaît comme JACKPOT_RECU. Un solde
+ * de départ repris du cahier (B41) apparaît comme REPRISE, daté du début du cahier.
  *
  * <p>Périmètre : {@code gere=false} → mes propres cotisations et jackpots ; {@code gere=true} →
  * ceux des tontines que j'ai créées.
@@ -27,6 +28,7 @@ public interface ActiviteRepository extends Repository<Cotisation, UUID> {
       " FROM ("
           + " SELECT c.id AS id,"
           + "   CASE"
+          + "     WHEN c.origine = 'REPRISE' THEN 'REPRISE'"
           + "     WHEN c.statut = 'EN_ATTENTE' THEN 'COTISATION_DECLAREE'"
           + "     WHEN c.statut = 'VALIDE' AND c.enregistre_par IS NOT NULL"
           + "          AND c.enregistre_par <> m.user_id THEN 'COTISATION_ENCAISSEE'"
@@ -34,8 +36,9 @@ public interface ActiviteRepository extends Repository<Cotisation, UUID> {
           + "     WHEN c.statut = 'EN_RETARD' THEN 'COTISATION_EN_RETARD'"
           + "     ELSE 'COTISATION_REFUSEE'"
           + "   END AS type,"
-          + "   CAST(COALESCE(c.date_refus, c.date_validation, c.created_at) AS timestamp)"
-          + "     AS date_evenement,"
+          + "   CASE WHEN c.origine = 'REPRISE' THEN CAST(cy.date_debut AS timestamp)"
+          + "     ELSE CAST(COALESCE(c.date_refus, c.date_validation, c.created_at) AS timestamp)"
+          + "   END AS date_evenement,"
           + "   c.montant AS montant, 'EPARGNE' AS sens, c.statut AS statut,"
           + "   t.id AS tontine_id, t.nom AS tontine_nom, cy.id AS cycle_id,"
           + "   cy.numero_cycle AS numero_cycle, c.id AS cotisation_id, m.id AS membre_id,"

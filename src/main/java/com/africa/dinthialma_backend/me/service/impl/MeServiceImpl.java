@@ -162,7 +162,8 @@ public class MeServiceImpl implements MeService {
       Map<UUID, CycleTontine> cycleEnCoursParTontine,
       Map<UUID, List<Cotisation>> cotisationsEnCoursParMembre,
       Map<UUID, List<Object[]>> aRegulariserParMembre,
-      Map<UUID, BigDecimal> retraitsParMembre) {}
+      Map<UUID, BigDecimal> retraitsParMembre,
+      Map<UUID, BigDecimal> repriseParMembre) {}
 
   private AgregatsSummary chargerAgregats(List<TontineMembre> memberships) {
     List<UUID> membreIds = memberships.stream().map(TontineMembre::getId).toList();
@@ -201,6 +202,8 @@ public class MeServiceImpl implements MeService {
         echeanceRepository.findARegulariserByMembreIds(membreIds).stream()
             .collect(Collectors.groupingBy(ligne -> (UUID) ligne[2])),
         retraitRepository.sumRemisGroupByMembreIn(membreIds).stream()
+            .collect(Collectors.toMap(row -> (UUID) row[0], row -> (BigDecimal) row[1])),
+        cotisationRepository.sumRepriseByMembreIds(membreIds).stream()
             .collect(Collectors.toMap(row -> (UUID) row[0], row -> (BigDecimal) row[1])));
   }
 
@@ -305,6 +308,8 @@ public class MeServiceImpl implements MeService {
         .totalRetire(retire)
         .solde(retire != null ? SoldeEpargne.solde(totalValide, retire) : null)
         .soldeLe(m.getSoldeLe())
+        .soldeReprise(agregats.repriseParMembre().get(m.getId()))
+        .dateDebutReelle(t.getDateDebutReelle())
         .totalJackpotsRecus(jackpots != null ? (BigDecimal) jackpots[1] : BigDecimal.ZERO)
         .nombreJackpotsRecus(jackpots != null ? (Long) jackpots[2] : 0L)
         .toursPayes(agregats.toursPayesParMembre().getOrDefault(m.getId(), 0L))
